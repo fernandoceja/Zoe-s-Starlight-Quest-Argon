@@ -1,0 +1,88 @@
+# Starlight Quest checks: syntax, picture/voice rules, cache stamp consistency. No secrets, no paid services.
+name: Starlight Quest tests
+on: pull_request
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Syntax check
+        run: |
+          for f in starlight-quest/js/*.js starlight-quest/sw.js; do
+            node --experimental-default-type=module --check "$f"
+          done
+      - name: Picture check
+        run: node starlight-quest/tests/pic_check.mjs
+      - name: Voice check
+        run: node starlight-quest/tests/voice_check.mjs
+      - name: Sound clip check
+        run: node starlight-quest/tests/sound_check.mjs
+      - name: Precache and stamp check
+        run: node starlight-quest/tests/precache_check.mjs
+      - name: Measurement round check
+        run: node starlight-quest/tests/measure_check.mjs
+      - name: Count on and doubles check
+        run: node starlight-quest/tests/counton_check.mjs
+      - name: Teacher word list check
+        run: node starlight-quest/tests/words_check.mjs
+      - name: This week pack check
+        run: node starlight-quest/tests/week_check.mjs
+      - name: Spelling rounds check
+        run: node starlight-quest/tests/spell_check.mjs
+      - name: Dictation rounds check
+        run: node starlight-quest/tests/dictation_check.mjs
+      - name: Star milestone check
+        run: node starlight-quest/tests/milestone_check.mjs
+      - name: Wardrobe outfit check
+        run: node starlight-quest/tests/outfit_check.mjs
+      - name: Today's star check
+        run: node starlight-quest/tests/todaystar_check.mjs
+      - name: Tap-to-blend check
+        run: node starlight-quest/tests/blend_check.mjs
+      - name: Sorting bins check
+        run: node starlight-quest/tests/sort_check.mjs
+      - name: Tap the world check
+        run: node starlight-quest/tests/tap_check.mjs
+      - name: Daily treasures check
+        run: node starlight-quest/tests/treasure_check.mjs
+      - name: Treasure Book check
+        run: node starlight-quest/tests/treasurebook_check.mjs
+      - name: Secret surprises check
+        run: node starlight-quest/tests/secret_check.mjs
+      - name: Lands and princess list check
+        run: node starlight-quest/tests/lands_check.mjs
+      - name: Bigger world check
+        run: node starlight-quest/tests/world_check.mjs
+      - name: New princess roster check
+        run: node starlight-quest/tests/roster_check.mjs
+      - name: Seashell Cove check
+        run: node starlight-quest/tests/cove_check.mjs
+      - name: Ariel rhyming quests check
+        run: node starlight-quest/tests/ariel_check.mjs
+      - name: Wayfinder Isle check
+        run: node starlight-quest/tests/isle_check.mjs
+      - name: Moana shape quests check
+        run: node starlight-quest/tests/moana_check.mjs
+      - name: Jasmine story-order quests check
+        run: node starlight-quest/tests/jasmine_check.mjs
+      - name: Anna capital-letter and end-mark quests check
+        run: node starlight-quest/tests/anna_check.mjs
+      - name: Tiana tally-mark quests check
+        run: node starlight-quest/tests/tiana_check.mjs
+      - name: Moonlit Palace Garden check
+        run: node starlight-quest/tests/garden_check.mjs
+      - name: Sunny Fjord Harbor check
+        run: node starlight-quest/tests/harbor_check.mjs
+      - name: Firefly Bayou check
+        run: node starlight-quest/tests/bayou_check.mjs
+      - name: Rosewood Glen check
+        run: node starlight-quest/tests/glen_check.mjs
+      - name: Aurora naming and action words check
+        run: node starlight-quest/tests/aurora_check.mjs
+      - name: Ten-land finale check
+        run: node starlight-quest/tests/finale_check.mjs

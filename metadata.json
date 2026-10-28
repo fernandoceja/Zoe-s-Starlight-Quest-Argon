@@ -1,0 +1,8 @@
+{
+  "name": "Zoe's Starlight Quest",
+  "description": "A gentle 3D learning adventure game for 6-year-old first graders exploring a pastel low-poly kingdom with 10 quests, positive reinforcement, and zero fail states.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
