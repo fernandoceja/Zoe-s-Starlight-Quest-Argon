@@ -485,8 +485,8 @@ export function buildGarden(env) {
     };
     ring(GARDEN_SPOTS.hedge[0], GARDEN_SPOTS.hedge[1], 1.5, 11, 0, 0.7, 0.5);                   // round hedge, gap toward the pool
     ring(GARDEN_SPOTS.flowers[0], GARDEN_SPOTS.flowers[1], 1.8, 14, Math.PI, 0.75, 0.55);        // flower-bed ring, gap toward the pool
-    m.add(geoDisc(24), COL.soil, GARDEN_SPOTS.flowers[0], 0.04, GARDEN_SPOTS.flowers[1], flat, 0, 0, 1.55);   // dark soil in the bed
-    m.add(geoDisc(24), COL.soil, GARDEN_SPOTS.hedge[0], 0.04, GARDEN_SPOTS.hedge[1], flat, 0, 0, 1.2);
+    m.add(geoDisc(24), COL.soil, GARDEN_SPOTS.flowers[0], 0.044, GARDEN_SPOTS.flowers[1], flat, 0, 0, 1.55);   // dark soil in the bed
+    m.add(geoDisc(24), COL.soil, GARDEN_SPOTS.hedge[0], 0.044, GARDEN_SPOTS.hedge[1], flat, 0, 0, 1.2);
   }
 
   // Night-blooming flowers scattered on the lawn (kept off the pool, paving, benches and beds): pale moon-white blooms on short stems.
