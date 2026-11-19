@@ -1641,11 +1641,16 @@ export function createWorld(container, hooks) {
 
   let focusNpc = null;
   let focusW = 0;
+  let nearCamW = 0;
   let camSnap = false;
-  const FOCUS_DROP = 3.3;
+  const FOCUS_DROP = 4.6;
   const FOCUS_ZOOM = 0.72;
   const lastFocusMid = new THREE.Vector3();
   const focusMid = new THREE.Vector3();
+  const nearMid = new THREE.Vector3();
+  const nearCamTmp = new THREE.Vector3();
+  const lastNearMid = new THREE.Vector3();
+  let lastNearSide = 1;
 
   // First-load castle sweeping intro (plays once on initial roam entry, skippable anytime)
   let introPlayed = false;
@@ -1842,6 +1847,55 @@ export function createWorld(container, hooks) {
 
   let nearNPC = null;
 
+  // --- Gentle 3D Guidance Arrow & Sparkle Dots (points toward nearest unvisited princess) ---
+  let guideTargetId = null;
+  const guideGroup = new THREE.Group();
+  const guideMat = new THREE.MeshStandardMaterial({
+    color: 0xffd84d,
+    emissive: 0xf59e0b,
+    emissiveIntensity: 0.7,
+    roughness: 0.25,
+    metalness: 0.35,
+  });
+  const guideArrow = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.72, 6), guideMat);
+  guideArrow.rotation.x = Math.PI / 2; // point along +Z
+  guideArrow.position.set(0, 0, 1.85);
+  guideArrow.raycast = () => {};
+  guideGroup.add(guideArrow);
+
+  const guideDots = [];
+  const guideDotGeo = new THREE.SphereGeometry(0.11, 8, 6);
+  for (let i = 0; i < 3; i++) {
+    const dot = new THREE.Mesh(guideDotGeo, guideMat);
+    dot.position.set(0, 0, 2.55 + i * 0.65);
+    dot.scale.setScalar(1 - i * 0.22);
+    dot.raycast = () => {};
+    guideGroup.add(dot);
+    guideDots.push(dot);
+  }
+  guideGroup.visible = false;
+  scene.add(guideGroup);
+
+  function setGuideTarget(npcId) {
+    guideTargetId = npcId && npcs[npcId] ? npcId : null;
+  }
+
+  function getNearestUnvisited(doneIds) {
+    const doneSet = new Set(Array.isArray(doneIds) ? doneIds : []);
+    let bestId = null;
+    let bestD = Infinity;
+    for (const id of NPC_ORDER) {
+      if (doneSet.has(id) || !npcs[id]) continue;
+      const g = npcs[id].group.position;
+      const d = Math.hypot(g.x - playerPos.x, g.z - playerPos.z);
+      if (d < bestD) {
+        bestD = d;
+        bestId = id;
+      }
+    }
+    return bestId;
+  }
+
   // --- Resize ---------------------------------------------------------------
   const onResize = () => {
     const w = container.clientWidth || window.innerWidth;
@@ -1945,12 +1999,40 @@ export function createWorld(container, hooks) {
     desiredCam.set(playerPos.x + camOffset.x, groundY + camOffset.y, playerPos.z + camOffset.z);
     desiredLook.set(playerPos.x + lookAhead.x, groundY + 1.15, playerPos.z + lookAhead.z);
 
+    // Smooth proximity framing: when Zoe walks up close to a princess, gently shift
+    // laterally so Zoe's head never blocks the princess from the south camera angle.
+    const activeNear = !focusNpc && nearNPC && npcs[nearNPC] ? npcs[nearNPC] : null;
+    const nearGoal = activeNear ? 1 : 0;
+    nearCamW = calmMotion
+      ? nearGoal
+      : nearCamW + (nearGoal - nearCamW) * (1 - Math.exp(-(activeNear ? 4.0 : 6.0) * dt));
+    if (activeNear) {
+      const gx = activeNear.group.position.x;
+      const gz = activeNear.group.position.z;
+      lastNearSide = playerPos.x >= gx ? 1 : -1;
+      nearMid.set((playerPos.x + gx) * 0.5, groundY + 1.35, (playerPos.z + gz) * 0.5 + 0.4);
+      lastNearMid.copy(nearMid);
+    }
+    if (nearCamW > 0.001) {
+      const eNear = nearCamW * nearCamW * (3 - 2 * nearCamW);
+      const mNear = activeNear ? nearMid : lastNearMid;
+      desiredLook.lerp(mNear, eNear * 0.75);
+      nearCamTmp.set(
+        mNear.x + camOffset.x + lastNearSide * 2.8,
+        groundY + camOffset.y * 0.96,
+        mNear.z + camOffset.z * 0.94
+      );
+      desiredCam.lerp(nearCamTmp, eNear * 0.85);
+    }
+
     const focusGoal = focusNpc ? 1 : 0;
     focusW = calmMotion ? focusGoal : focusW + (focusGoal - focusW) * (1 - Math.exp(-(focusNpc ? 4.5 : 8) * dt));
     if (focusNpc) {
+      const side = playerPos.x >= focusNpc.group.position.x ? 1 : -1;
+      lastNearSide = side;
       focusMid.set(
         (playerPos.x + focusNpc.group.position.x) / 2,
-        groundY + 1.0,
+        groundY + 1.15,
         (playerPos.z + focusNpc.group.position.z) / 2 + FOCUS_DROP
       );
     }
@@ -1959,7 +2041,11 @@ export function createWorld(container, hooks) {
       const m = focusNpc ? focusMid : lastFocusMid;
       if (focusNpc) lastFocusMid.copy(focusMid);
       desiredLook.lerp(m, e);
-      focusCamTmp.set(m.x + camOffset.x * FOCUS_ZOOM, m.y + camOffset.y * FOCUS_ZOOM, m.z + camOffset.z * FOCUS_ZOOM);
+      focusCamTmp.set(
+        m.x + camOffset.x * FOCUS_ZOOM + lastNearSide * 2.4,
+        m.y + camOffset.y * FOCUS_ZOOM,
+        m.z + camOffset.z * FOCUS_ZOOM
+      );
       desiredCam.lerp(focusCamTmp, e);
     }
 
@@ -2024,6 +2110,28 @@ export function createWorld(container, hooks) {
       const g = todayTarget.group.position;
       todayStar.position.set(g.x, todayTarget.baseY + 3.1 * PRINCESS_SCALE + 1.5 + (calmMotion ? 0 : Math.sin(t * 1.4) * 0.18), g.z);
       if (!calmMotion) todayStar.rotation.y = t * 0.8;
+    }
+
+    // ---- Gentle 3D Guidance Arrow toward next unvisited princess ----
+    const guideNpc = !focusNpc && !introActive && guideTargetId ? npcs[guideTargetId] : null;
+    if (guideNpc) {
+      const gx = guideNpc.group.position.x - playerPos.x;
+      const gz = guideNpc.group.position.z - playerPos.z;
+      const gd = Math.hypot(gx, gz);
+      if (gd > NPC_INTERACT_DIST + 1.2) {
+        guideGroup.visible = true;
+        const bob = calmMotion ? 0 : Math.sin(t * 3.0) * 0.1;
+        guideGroup.position.set(playerPos.x, groundY + 0.55 + bob, playerPos.z);
+        guideGroup.rotation.y = Math.atan2(gx, gz);
+        for (let i = 0; i < guideDots.length; i++) {
+          const pulse = calmMotion ? 0 : Math.sin(t * 4.2 - i * 0.9) * 0.08;
+          guideDots[i].position.y = pulse;
+        }
+      } else {
+        guideGroup.visible = false;
+      }
+    } else {
+      guideGroup.visible = false;
     }
 
     if (snowPoints) {
@@ -2173,6 +2281,8 @@ export function createWorld(container, hooks) {
     setOutfit,
     setTodayStar,
     setClockTime,
+    setGuideTarget,
+    getNearestUnvisited,
     pause: pauseRendering,
     resume: resumeRendering,
     isPaused() { return worldPaused; },

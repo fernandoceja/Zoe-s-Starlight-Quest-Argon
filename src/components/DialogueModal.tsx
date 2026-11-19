@@ -14,13 +14,16 @@ interface DialogueModalProps {
 export const DialogueModal: React.FC<DialogueModalProps> = ({
   npcId,
   lines,
-  kind = 'greeting',
   onDone,
   actionLabel = "Let's Go! ✨",
 }) => {
   const [lineIdx, setLineIdx] = useState(0);
   const princess = PRINCESSES[npcId];
   const currentLine = lines[lineIdx] || '';
+
+  useEffect(() => {
+    setLineIdx(0);
+  }, [npcId, lines]);
 
   useEffect(() => {
     if (currentLine) {
@@ -47,12 +50,16 @@ export const DialogueModal: React.FC<DialogueModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center p-3 sm:p-4 bg-slate-900/40 backdrop-blur-xs animate-fade-in pointer-events-auto">
-      <div className="w-full max-w-xl bg-gradient-to-b from-white via-[#fdfcf7] to-[#f7f4e9] rounded-3xl border-4 border-[#ebd373] p-5 sm:p-7 shadow-2xl relative">
+    <div className="fixed inset-0 z-40 flex items-end justify-center p-3 sm:p-5 pb-4 sm:pb-6 bg-slate-900/20 pointer-events-auto">
+      <div
+        className="w-full max-w-xl bg-[#fffdf8] rounded-3xl border-4 border-[#ebd373] p-4 sm:p-6 shadow-2xl relative"
+        role="dialog"
+        aria-label={`${princess?.name || 'Princess'} dialogue`}
+      >
         {/* Princess Info Header */}
-        <div className="flex items-center gap-4 mb-4">
+        <div className="flex items-center gap-3.5 mb-3">
           <div
-            className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden border-4 shadow-md shrink-0 bg-white"
+            className="w-16 h-16 sm:w-18 sm:h-18 rounded-full overflow-hidden border-4 shadow-md shrink-0 bg-white"
             style={{ borderColor: princess?.color || '#ebd373' }}
           >
             <img
@@ -62,41 +69,40 @@ export const DialogueModal: React.FC<DialogueModalProps> = ({
             />
           </div>
           <div className="flex-1 min-w-0">
-            <h3
-              className="text-xl sm:text-2xl font-black truncate"
-              style={{ color: princess?.color || '#7c5e10' }}
-            >
+            <h3 className="text-xl sm:text-2xl font-black text-slate-900 truncate">
               {princess?.name}
             </h3>
-            <p className="text-xs sm:text-sm font-bold text-slate-500 truncate">
+            <p className="text-sm font-bold text-slate-700 truncate">
               {princess?.landName}
             </p>
           </div>
           <button
+            type="button"
             onClick={handleReplay}
-            className="w-10 h-10 rounded-full bg-amber-100 hover:bg-amber-200 border border-amber-300 flex items-center justify-center text-lg shadow-sm active:scale-95"
+            className="min-w-[48px] min-h-[48px] rounded-full bg-amber-100 hover:bg-amber-200 border-2 border-amber-400 flex items-center justify-center text-xl shadow-sm active:scale-95 shrink-0"
             aria-label="Repeat speech"
-            title="Read again"
+            title="Listen again"
           >
             🔊
           </button>
         </div>
 
-        {/* Speech Bubble / Dialogue Text */}
-        <div className="bg-white/90 border-2 border-amber-200/80 rounded-2xl p-4 sm:p-5 mb-5 shadow-inner min-h-[5rem] flex items-center">
-          <p className="text-lg sm:text-xl font-bold text-slate-800 leading-snug">
-            "{currentLine}"
+        {/* Fixed-height Speech Bubble so the Next button NEVER shifts between lines */}
+        <div className="bg-white border-2 border-amber-200 rounded-2xl px-4 py-3 sm:px-5 sm:py-4 mb-4 shadow-inner h-28 sm:h-32 overflow-y-auto flex items-center">
+          <p className="text-lg sm:text-xl font-bold text-slate-900 leading-snug">
+            &ldquo;{currentLine}&rdquo;
           </p>
         </div>
 
-        {/* Footer / Progression */}
-        <div className="flex items-center justify-between">
-          <div className="text-xs font-bold text-slate-400">
-            {lines.length > 1 && `${lineIdx + 1} of ${lines.length}`}
+        {/* Footer / Stationary Progression Button */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm font-extrabold text-slate-700 tabular-nums">
+            {lines.length > 1 ? `Line ${lineIdx + 1} of ${lines.length}` : ''}
           </div>
           <button
+            type="button"
             onClick={handleNext}
-            className="px-6 sm:px-8 py-3 rounded-full bg-gradient-to-r from-amber-400 to-yellow-400 text-amber-950 font-black text-base sm:text-lg shadow-md border-2 border-white hover:brightness-105 active:scale-95 transition-all"
+            className="min-w-[176px] min-h-[56px] px-6 sm:px-8 py-3 rounded-full bg-gradient-to-r from-amber-400 to-yellow-400 text-amber-950 font-black text-lg shadow-md border-2 border-amber-600/30 hover:brightness-105 active:scale-95 transition-transform"
           >
             {lineIdx < lines.length - 1 ? 'Next ➡️' : actionLabel}
           </button>

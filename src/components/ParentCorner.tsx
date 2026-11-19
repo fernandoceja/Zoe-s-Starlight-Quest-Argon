@@ -93,8 +93,8 @@ export const ParentCorner: React.FC<ParentCornerProps> = ({
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in pointer-events-auto">
         <div className="w-full max-w-sm bg-white rounded-3xl border-4 border-amber-300 p-6 text-center shadow-2xl">
           <div className="text-4xl mb-2">🔒</div>
-          <h2 className="text-xl font-black text-slate-800 mb-1">Grown-ups Corner</h2>
-          <p className="text-xs text-slate-500 mb-4">
+          <h2 className="text-xl font-black text-slate-900 mb-1">Grown-ups Corner</h2>
+          <p className="text-sm font-semibold text-slate-700 mb-4">
             Please answer this quick question to enter:
           </p>
 
@@ -149,7 +149,7 @@ export const ParentCorner: React.FC<ParentCornerProps> = ({
               <h2 className="text-xl sm:text-2xl font-black text-amber-950">
                 Parent & Educator Corner
               </h2>
-              <p className="text-xs font-bold text-slate-500">
+              <p className="text-sm font-bold text-slate-700">
                 Zoe's California Grade 1 learning progress & curriculum mapping
               </p>
             </div>
@@ -236,12 +236,12 @@ export const ParentCorner: React.FC<ParentCornerProps> = ({
                         <span className="font-black text-slate-900 truncate">
                           {p?.name} · {p?.landName}
                         </span>
-                        <span className="font-extrabold text-[10px] px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 shrink-0">
+                        <span className="font-extrabold text-xs px-2 py-0.5 rounded-md bg-amber-100 text-amber-950 border border-amber-300 shrink-0">
                           Tier {tier} {isComplete ? '✨ Glowing' : ''}
                         </span>
                       </div>
-                      <div className="font-bold text-indigo-700">{info?.standard}</div>
-                      <div className="text-slate-600 mt-0.5">{info?.desc}</div>
+                      <div className="font-bold text-indigo-800 text-sm">{info?.standard}</div>
+                      <div className="text-slate-700 text-sm mt-0.5">{info?.desc}</div>
                     </div>
                   </div>
                 );

@@ -87,6 +87,8 @@ export const App: React.FC = () => {
   >('menu');
 
   const [activeNPC, setActiveNPC] = useState<PrincessId | null>(null);
+  const [nearNPC, setNearNPC] = useState<PrincessId | null>(null);
+  const [nextNPC, setNextNPC] = useState<PrincessId | null>('belle');
   const [interactPrompt, setInteractPrompt] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [todayStar, setTodayStar] = useState<PrincessId | undefined>(undefined);
@@ -94,6 +96,8 @@ export const App: React.FC = () => {
   // Quest State
   const [rounds, setRounds] = useState<Round[]>([]);
   const [roundIdx, setRoundIdx] = useState(0);
+  const [baseTotal, setBaseTotal] = useState(5);
+  const [completedBaseCount, setCompletedBaseCount] = useState(0);
   const [results, setResults] = useState<any[]>([]);
   const [requeued, setRequeued] = useState(0);
   const [celebrationData, setCelebrationData] = useState<{
@@ -157,14 +161,21 @@ export const App: React.FC = () => {
     // Init Input and 3D Canvas
     Input.init();
 
+    const buildInteractPrompt = (npcId: string | null) => {
+      if (!npcId || !PRINCESSES[npcId]) return null;
+      const name = PRINCESSES[npcId].name;
+      if ((Save.data.done || []).includes(npcId)) {
+        return `✨ ${name} is happy! Play again?`;
+      }
+      return `💬 Tap ${name} to talk ✨`;
+    };
+
     if (containerRef.current) {
       const world = createWorld(containerRef.current, {
         onNearNPC(npcId: string) {
-          if (npcId && PRINCESSES[npcId]) {
-            setInteractPrompt(`💬 Tap ${PRINCESSES[npcId].name} to talk ✨`);
-          } else {
-            setInteractPrompt(null);
-          }
+          const validId = npcId && PRINCESSES[npcId] ? (npcId as PrincessId) : null;
+          setNearNPC(validId);
+          setInteractPrompt(buildInteractPrompt(validId));
         },
         onInteractRequest(npcId: string) {
           if (!npcId || !QUESTS[npcId]) return;
@@ -221,6 +232,13 @@ export const App: React.FC = () => {
         shouldRunFinale(Save.data.done, NPC_IDS, builtSlotIds().length)
       );
       world.setOutfit(Save.data.outfit);
+
+      const initialNext =
+        (world.getNearestUnvisited(Save.data.done || []) as PrincessId | null) ||
+        NPC_IDS.find((id) => !(Save.data.done || []).includes(id)) ||
+        null;
+      setNextNPC(initialNext);
+      world.setGuideTarget(initialNext);
     }
 
     return () => {
@@ -229,6 +247,18 @@ export const App: React.FC = () => {
       }
     };
   }, []);
+
+  // Helper to update next-princess guidance (HUD + 3D golden arrow)
+  const refreshGuidance = (doneList: string[]) => {
+    const next =
+      (worldRef.current?.getNearestUnvisited?.(doneList) as PrincessId | null) ||
+      NPC_IDS.find((id) => !doneList.includes(id)) ||
+      null;
+    setNextNPC(next);
+    if (worldRef.current?.setGuideTarget) {
+      worldRef.current.setGuideTarget(next);
+    }
+  };
 
   // Reveal secrets & sticker rewards
   const revealSecret = (id: string) => {
@@ -328,9 +358,11 @@ export const App: React.FC = () => {
     setRoundIdx(0);
     setResults([]);
     setRequeued(0);
+    setCompletedBaseCount(0);
 
     const built = buildRounds(npcId, Math.random, landState(Save.data.ladder[npcId]));
     setRounds(built);
+    setBaseTotal(built.length || 5);
 
     if (worldRef.current) {
       worldRef.current.setInputEnabled(false);
@@ -346,6 +378,7 @@ export const App: React.FC = () => {
 
   // Correct Answer in Challenge
   const handleRoundCorrect = () => {
+    const curRound = rounds[roundIdx];
     // Add star
     Save.data.stars += 1;
     if (activeNPC && !Save.data.done.includes(activeNPC)) {
@@ -354,25 +387,32 @@ export const App: React.FC = () => {
     Save.save();
     setStars(Save.data.stars);
 
+    if (curRound && !curRound.requeued) {
+      setCompletedBaseCount((c) => Math.min(baseTotal, c + 1));
+    }
+
     // Bookkeeping
     const nextRoundIdx = roundIdx + 1;
     if (nextRoundIdx >= rounds.length) {
-      // Completed all 5 rounds!
       completeQuest();
     } else {
       setRoundIdx(nextRoundIdx);
     }
   };
 
-  // Missed round handling
+  // Missed round handling — re-queue with at least 2 other questions in between (never back-to-back)
   const handleRoundMiss = (missCount: number) => {
     const curRound = rounds[roundIdx];
-    if (curRound && !curRound.requeued && results.length < 5) {
-      setResults((prev) => [...prev, { round: curRound, firstTry: false, hinted: true }]);
-      if (missCount === 1 && requeued < 2) {
+    if (curRound && !curRound.requeued && missCount === 1) {
+      if (results.length < baseTotal) {
+        setResults((prev) => [...prev, { round: curRound, firstTry: false, hinted: true }]);
+      }
+      const remainingAfter = rounds.length - 1 - roundIdx;
+      if (requeued < 2 && remainingAfter >= 2) {
         setRequeued((r) => r + 1);
         const copy = [...rounds];
-        copy.splice(Math.min(copy.length, roundIdx + 3), 0, { ...curRound, requeued: true });
+        const insertAt = Math.min(copy.length, roundIdx + 3);
+        copy.splice(insertAt, 0, { ...curRound, requeued: true });
         setRounds(copy);
       }
     }
@@ -383,7 +423,6 @@ export const App: React.FC = () => {
     if (!activeNPC) return;
     const npcId = activeNPC;
     const P = PRINCESSES[npcId];
-    const quest = QUESTS[npcId];
 
     // Ladder bookkeeping
     Save.data.ladder[npcId] = recordQuest(landState(Save.data.ladder[npcId]), results);
@@ -393,8 +432,10 @@ export const App: React.FC = () => {
     const isFirstTime = !Save.data.done.includes(npcId);
     if (isFirstTime) {
       Save.data.done.push(npcId);
-      Save.data.stars += 3; // +3 bonus stars for land shard
+      Save.data.stars += 3; // +3 bonus stars for first-time land star shard
       setDoneLands([...Save.data.done]);
+    } else {
+      Save.data.stars += 1; // +1 bonus star for practicing again
     }
     Save.save();
     setStars(Save.data.stars);
@@ -411,17 +452,21 @@ export const App: React.FC = () => {
       setUnlockedMilestones([...Save.data.milestones]);
     }
 
-    // Trigger Land Celebration
+    // Update guidance to point toward the nearest unvisited princess
+    refreshGuidance(Save.data.done);
+
+    // Trigger Land Celebration (distinct reward copy on first completion vs repeat practice)
     setCelebrationData({
-      title: `${P.name}'s land is glowing!`,
-      sub: `You earned the ${P.landName} star shard! ⭐ +3 stars`,
+      title: isFirstTime ? `${P.name}'s land is glowing!` : `${P.name} is smiling! 🌟`,
+      sub: isFirstTime
+        ? `You earned the ${P.landName} star shard! ⭐ +3 stars`
+        : `Bonus stars! +1 ⭐ for practicing in ${P.landName}!`,
       afterAction: () => {
-        // Check if all 10 lands complete -> Starlight Crown Finale
-        const allDone = shouldRunFinale(Save.data.done, NPC_IDS, builtSlotIds().length);
+        const allDone = isFirstTime && shouldRunFinale(Save.data.done, NPC_IDS, builtSlotIds().length);
         if (allDone) {
           triggerFinale();
         } else {
-          returnToRoam();
+          returnToRoam(npcId);
         }
       },
     });
@@ -448,10 +493,15 @@ export const App: React.FC = () => {
     setGameState('finale');
   };
 
-  const returnToRoam = () => {
+  const returnToRoam = (finishedNpcId?: PrincessId) => {
     setActiveNPC(null);
     setGameState('roam');
     setCelebrationData(null);
+    refreshGuidance(Save.data.done || []);
+    // Update the talk prompt immediately if Zoe is still standing next to the finished princess
+    if (finishedNpcId && nearNPC === finishedNpcId && PRINCESSES[finishedNpcId]) {
+      setInteractPrompt(`✨ ${PRINCESSES[finishedNpcId].name} is happy! Play again?`);
+    }
     if (worldRef.current) {
       worldRef.current.setInputEnabled(true);
       worldRef.current.unfocus();
@@ -498,11 +548,12 @@ export const App: React.FC = () => {
               activeNPC ? { current: roundIdx + 1, total: rounds.length } : undefined
             }
             interactPrompt={interactPrompt}
+            nextNPC={nextNPC}
             muted={muted}
             onToggleMute={handleToggleMute}
             onPause={handleTogglePause}
             onInteract={() => {
-              if (interactPrompt && activeNPC) handleStartQuest(activeNPC);
+              if (nearNPC) handleStartQuest(nearNPC);
             }}
             todayStarNPC={todayStar}
           />
@@ -512,8 +563,8 @@ export const App: React.FC = () => {
 
       {/* Toast Notification */}
       {toastMsg && (
-        <div className="fixed top-16 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none animate-bounce">
-          <div className="bg-amber-400 text-amber-950 font-black text-sm sm:text-base px-5 py-2.5 rounded-full border-2 border-white shadow-lg">
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
+          <div className="bg-amber-400 text-amber-950 font-black text-base px-5 py-2.5 rounded-full border-2 border-white shadow-lg">
             {toastMsg}
           </div>
         </div>
@@ -563,6 +614,8 @@ export const App: React.FC = () => {
           round={currentRound}
           roundIdx={roundIdx}
           totalRounds={rounds.length}
+          baseTotal={baseTotal}
+          completedBaseCount={completedBaseCount}
           onCorrect={handleRoundCorrect}
           onMiss={handleRoundMiss}
         />

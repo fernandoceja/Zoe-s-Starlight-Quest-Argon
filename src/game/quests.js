@@ -732,6 +732,8 @@ const CVC_SETS = [
   ['sun', 'sit', 'sap'], ['hat', 'hot', 'hit'], ['bed', 'bad', 'bud'],
   ['map', 'mop', 'mat'], ['bug', 'bag', 'big'], ['fox', 'fix', 'fax'],
   ['red', 'rod', 'rid'], ['net', 'nut', 'not'], ['ten', 'tan', 'tin'],
+  ['cup', 'cap', 'cop'], ['bus', 'bun', 'bug'], ['hen', 'hat', 'hop'],
+  ['box', 'bag', 'bat'], ['web', 'wet', 'wig'], ['jam', 'jet', 'jug'],
 ];
 
 function _pick(arr, rng) { return arr[Math.floor(rng() * arr.length)]; }
@@ -995,20 +997,102 @@ function _vowelIndex(w) {
   for (let i = 0; i < w.length; i++) if (_VOWELS.includes(w[i])) at.push(i);
   return at.length === 1 ? at[0] : -1; // one clear vowel only, so the blank has one answer
 }
+// Offline picture & word clues so missing-letter / spelling rounds are 100% playable with sound off.
+const WORD_CLUES = {
+  sat: { pic: '🪑', clue: 'sat on a chair' },
+  hip: { pic: '💃', clue: 'hands on your hip' },
+  pen: { pic: '🖊️', clue: 'you write with a pen' },
+  log: { pic: '🪵', clue: 'a wooden log' },
+  nut: { pic: '🥜', clue: 'a crunchy nut' },
+  cat: { pic: '🐱', clue: 'a furry pet that says meow' },
+  dog: { pic: '🐶', clue: 'a friendly pet that barks' },
+  pig: { pic: '🐷', clue: 'a pink farm animal' },
+  bug: { pic: '🐞', clue: 'a tiny crawly bug' },
+  sun: { pic: '☀️', clue: 'shines bright in the sky' },
+  hat: { pic: '🎩', clue: 'wear it on your head' },
+  bed: { pic: '🛏️', clue: 'sleep in a cozy bed' },
+  cup: { pic: '☕', clue: 'drink from a cup' },
+  bat: { pic: '🦇', clue: 'flies at night' },
+  fox: { pic: '🦊', clue: 'a clever orange animal' },
+  net: { pic: '🥅', clue: 'catches butterflies or balls' },
+  ten: { pic: '🔟', clue: 'the number after nine' },
+  box: { pic: '📦', clue: 'holds toys inside' },
+  map: { pic: '🗺️', clue: 'shows you where to go' },
+  red: { pic: '🔴', clue: 'the color of an apple' },
+  hen: { pic: '🐔', clue: 'a mama chicken' },
+  bus: { pic: '🚌', clue: 'takes kids to school' },
+  web: { pic: '🕸️', clue: 'a spider spins a web' },
+  van: { pic: '🚐', clue: 'a big family car' },
+  rug: { pic: '🧶', clue: 'a soft mat on the floor' },
+  pot: { pic: '🍲', clue: 'cooks warm soup' },
+  mop: { pic: '🧹', clue: 'cleans the floor' },
+  jam: { pic: '🍓', clue: 'sweet berry spread on toast' },
+  jet: { pic: '✈️', clue: 'a very fast plane' },
+  rat: { pic: '🐀', clue: 'a small animal with a long tail' },
+  pin: { pic: '📌', clue: 'holds paper on a board' },
+  pan: { pic: '🍳', clue: 'cooks eggs on the stove' },
+  cap: { pic: '🧢', clue: 'a hat with a brim' },
+  fan: { pic: '🪭', clue: 'blows cool air' },
+  bin: { pic: '🗑️', clue: 'holds recycling or toys' },
+  dot: { pic: '⚫', clue: 'a tiny round spot' },
+  hot: { pic: '🔥', clue: 'very warm, not cold' },
+  hop: { pic: '🐰', clue: 'jump like a bunny' },
+  hug: { pic: '🤗', clue: 'a warm squeeze' },
+  mug: { pic: '☕', clue: 'a cozy cup for cocoa' },
+  run: { pic: '🏃', clue: 'move fast on your feet' },
+  sit: { pic: '🪑', clue: 'rest in a chair' },
+  dig: { pic: '⛏️', clue: 'make a hole in the dirt' },
+  wet: { pic: '💧', clue: 'covered in water' },
+  pet: { pic: '🐾', clue: 'a gentle animal friend' },
+  bag: { pic: '👜', clue: 'carry things inside' },
+  mat: { pic: '🚪', clue: 'a small rug by the door' },
+  lend: { pic: '🤝', clue: 'share something with a friend' },
+  send: { pic: '✉️', clue: 'mail a letter to a friend' },
+  fast: { pic: '⚡', clue: 'very quick, not slow' },
+  sink: { pic: '🚰', clue: 'wash your hands here' },
+  past: { pic: '🏃', clue: 'run right past the tree' },
+  hand: { pic: '✋', clue: 'wave with your hand' },
+  sand: { pic: '🏖️', clue: 'warm grains at the beach' },
+  tent: { pic: '⛺', clue: 'sleep inside while camping' },
+  nest: { pic: '🪺', clue: 'a cozy home for baby birds' },
+  lamp: { pic: '💡', clue: 'glows bright in your room' },
+  jump: { pic: '🦘', clue: 'leap high in the air' },
+  pink: { pic: '🩷', clue: 'a sweet pastel color' },
+  wind: { pic: '🌬️', clue: 'blows the leaves around' },
+  ring: { pic: '💍', clue: 'wear it on your finger' },
+  king: { pic: '👑', clue: 'wears a royal crown' },
+  gift: { pic: '🎁', clue: 'a wrapped present' },
+  frog: { pic: '🐸', clue: 'a green jumper by the pond' },
+  crab: { pic: '🦀', clue: 'walks sideways on the beach' },
+  flag: { pic: '🚩', clue: 'waves high on a pole' },
+  drum: { pic: '🥁', clue: 'tap it to make music' },
+};
+
 function _vowelRound(w, rng) {
   const i = _vowelIndex(w);
   const v = w[i];
-  const others = _shuffle(_VOWELS.filter((x) => x !== v), rng).slice(0, 2);
+  const candOthers = _shuffle(_VOWELS.filter((x) => x !== v), rng);
+  // Prefer distractor vowels that do not form another real word when possible
+  const nonWords = candOthers.filter((x) => !_isRealWord(w.slice(0, i) + x + w.slice(i + 1)));
+  const others = [...nonWords, ...candOthers.filter((x) => !nonWords.includes(x))].slice(0, 2);
   const where = i === 0 ? 'at the start' : i === w.length - 1 ? 'at the end' : 'in the middle';
+  const blanked = w.split('').map((c, k) => (k === i ? '_' : c)).join(' ');
+  const info = WORD_CLUES[w];
   const r = {
-    prompt: 'Listen. Which letter is missing?', // the word is spoken, not shown (showing it gives the answer away)
+    prompt: 'Which letter is missing?',
     say: `Listen: ${w}. Which letter is missing?`,
-    show: w.split('').map((c, k) => (k === i ? '_' : c)).join(' '),
+    show: blanked,
+    word: w,
     choices: [v, ...others], answer: v,
     // Shown hint never spells the word; the spoken hint (hintSay) can say it.
-    hint: `Good try! Listen again and say it slowly. What sound do you hear ${where}?`,
+    hint: `Good try! Say the word slowly. What vowel sound do you hear ${where}?`,
+    hint2: `Look closely at "${blanked}". Try putting each letter in the blank—which one matches ${info ? info.clue : 'the sound'}?`,
     hintSay: `Good try! Say it slowly: ${w}. What sound do you hear ${where}?`,
   };
+  if (info) {
+    r.pic = info.pic;
+    r.clue = info.clue;
+  }
   if (v !== 'o') r.sound = LETTER_CLIPS[v] + '.mp3'; // the 'o' clip says the long sound
   return r;
 }
@@ -1019,14 +1103,23 @@ function _endingRound(w, rng) {
   const notWords = pool.filter((e) => !_isRealWord(start + e));
   pool = [...notWords, ...pool.filter((e) => !notWords.includes(e))];
   const d = pool.slice(0, 2);
-  return {
-    prompt: 'Listen. Which ending finishes the word?',
+  const blanked = `${start.split('').join(' ')} _ _`;
+  const info = WORD_CLUES[w];
+  const r = {
+    prompt: 'Which ending finishes the word?',
     say: `Listen: ${w}. Which ending finishes the word?`,
-    show: `${start.split('').join(' ')} _ _`,
+    show: blanked,
+    word: w,
     choices: [end, ...d], answer: end,
-    hint: 'Good try! Listen again and say it slowly. Which letters do you hear at the end?',
+    hint: 'Good try! Say the word slowly. Which letters do you hear at the end?',
+    hint2: `Look at "${blanked}". Sound out the last two letters carefully—which ending finishes the word?`,
     hintSay: `Good try! Say it slowly: ${w}. Which letters do you hear at the end?`,
   };
+  if (info) {
+    r.pic = info.pic;
+    r.clue = info.clue;
+  }
+  return r;
 }
 const _LOOKALIKE = { b: 'd', d: 'b', p: 'q', m: 'n', n: 'm', e: 'a', a: 'e', i: 'e', o: 'u', u: 'o', s: 'c', t: 'd' };
 function _misspellings(w, rng) {
@@ -1050,15 +1143,23 @@ function _spellRound(w, rng) {
   const spare = _shuffle(_ALPHA.filter((l) => !w.includes(l)), rng).slice(0, 2);
   let tiles = _shuffle([...w.split(''), ...spare], rng);
   for (let k = 0; k < 6 && tiles.join('').startsWith(w); k++) tiles = _shuffle(tiles, rng);
-  return {
-    prompt: 'Listen and build the word.',
+  const info = WORD_CLUES[w];
+  const r = {
+    prompt: 'Build the word with the letter tiles.',
     say: `Listen: ${w}. Tap the letters to build the word.`,
     replay: `Listen: ${w}. Tap the letters to build the word.`,
+    word: w,
     choices: [w, ..._misspellings(w, rng)], answer: w,
-    hint: 'Good try! Listen again and say it slowly. What sound comes next?',
+    hint: 'Good try! Say it slowly. What sound comes next?',
+    hint2: `The word starts with "${w[0]}" and has ${w.length} letters. Try tapping "${w[0]}" first!`,
     hintSay: `Good try! Say it slowly: ${w}. What sound comes next?`,
-    spell: { word: w, tiles },
+    spell: { word: w, target: w.split(''), tiles },
   };
+  if (info) {
+    r.pic = info.pic;
+    r.clue = info.clue;
+  }
+  return r;
 }
 /** A spelling round for this tier from the live WEEK pack, or null when the pack has no fitting word. */
 function _spellKind(tier, rng) {
@@ -1076,7 +1177,17 @@ export const DICTATION_PRACTICE = [
   'He has a box of pens.',
   'He can sit on top of the log.',
   'Did he get a bag of nuts?',
+  'She has a red cup of milk.',
+  'The little frog can hop past the log.',
 ];
+const _DICT_PICS = {
+  'Can he run past the tent?': { pic: '⛺', clue: 'running past a camping tent' },
+  'He has a box of pens.': { pic: '🖊️', clue: 'a box full of writing pens' },
+  'He can sit on top of the log.': { pic: '🪵', clue: 'sitting on top of a wooden log' },
+  'Did he get a bag of nuts?': { pic: '🥜', clue: 'a bag full of crunchy nuts' },
+  'She has a red cup of milk.': { pic: '🥛', clue: 'a red cup of milk' },
+  'The little frog can hop past the log.': { pic: '🐸', clue: 'a little frog hopping past a log' },
+};
 const _SWAP_EXTRA = ['he', 'she', 'we', 'me', 'be', 'ten', 'tan', 'tin', 'ran', 'run', 'rug', 'rub', 'bun', 'pan', 'pen', 'pin', 'pig', 'peg',
   'pat', 'pit', 'pot', 'put', 'cat', 'cut', 'cot', 'can', 'cap', 'cup', 'big', 'bag', 'beg', 'bug', 'box', 'fox', 'fix', 'hen', 'hat', 'hit',
   'hut', 'hot', 'hop', 'hip', 'has', 'his', 'had', 'hid', 'sad', 'sit', 'set', 'sat', 'sap', 'sip', 'mat', 'met', 'map', 'mop', 'mud', 'net',
@@ -1164,12 +1275,17 @@ function _dictRound(tier, rng) {
   const spoken = answer;
   const r = { choices: [answer, ...variants], answer };
   if (tier === 1) {
+    const info = _DICT_PICS[answer];
     return {
       ...r,
-      prompt: 'Which sentence did you hear?',
+      ...(info ? { pic: info.pic, clue: info.clue } : {}),
+      prompt: 'Which sentence matches?',
       say: `Listen. ${spoken} Which sentence did you hear?`,
       replay: spoken,
-      hint: 'Good try! Listen again. Which words did you hear?',
+      hint: 'Good try! Read each sentence slowly and check every word.',
+      hint2: info
+        ? `Look at the picture clue (${info.clue}). Which sentence makes complete sense?`
+        : 'Good try! Look closely at the words that are different between the choices.',
       hintSay: `Good try! Listen again. ${spoken}`,
     };
   }
@@ -2112,6 +2228,13 @@ function _tagged(npcId, tier, rng) {
   return r;
 }
 
+// Track recently served round keys per princess so consecutive plays serve fresh questions.
+const _recentKeysByNpc = new Map();
+export function resetRecentRounds(npcId) {
+  if (npcId) _recentKeysByNpc.delete(npcId);
+  else _recentKeysByNpc.clear();
+}
+
 /**
  * Build one quest for a land.
  * ladder: { tier: 1-3, review: [{ round, wins }] } (from js/ladder.js).
@@ -2127,8 +2250,23 @@ export function buildRounds(npcId, rng = Math.random, ladder = null) {
     const below = Math.max(1, tier - 1);
     const out = [];
     const seen = new Set();
+    const recent = _recentKeysByNpc.get(npcId) || new Set();
     const add = (r) => { if (r && !seen.has(r.key)) { seen.add(r.key); out.push(r); return true; } return false; };
-    const fresh = (t) => { for (let k = 0; k < 40; k++) { if (add(_tagged(npcId, t, rng))) return; } add({ ..._tagged(npcId, t, rng), key: `x${out.length}` }); };
+    const fresh = (t) => {
+      // First pass: avoid both current-quest duplicates AND immediately previous quest rounds
+      for (let k = 0; k < 45; k++) {
+        const cand = _tagged(npcId, t, rng);
+        if (!seen.has(cand.key) && !recent.has(cand.key)) {
+          add(cand);
+          return;
+        }
+      }
+      // Second pass: avoid current-quest duplicates
+      for (let k = 0; k < 40; k++) {
+        if (add(_tagged(npcId, t, rng))) return;
+      }
+      add({ ..._tagged(npcId, t, rng), key: `x${out.length}` });
+    };
     fresh(below);
     // Older Aurora review items can contain words with both noun and verb meanings.
     // Keep the stored queue intact, but never serve an obsolete ambiguous round.
@@ -2144,6 +2282,8 @@ export function buildRounds(npcId, rng = Math.random, ladder = null) {
     if (!(rv && add({ ...rv, key: roundKey(rv), review: true }))) fresh(tier);
     fresh(tier);
     fresh(tier);
+    // Save keys from this quest so the next play with this princess picks fresh rounds
+    _recentKeysByNpc.set(npcId, new Set(out.map((r) => r.key)));
     return out;
   } catch (e) {}
   return (QUESTS[npcId] && QUESTS[npcId].rounds) || [];
@@ -2151,7 +2291,7 @@ export function buildRounds(npcId, rng = Math.random, ladder = null) {
 
 const _EMOJI = /[\p{Extended_Pictographic}\uFE0F\u200D\u20E3]/gu;
 export function hasEmoji(t) { _EMOJI.lastIndex = 0; return _EMOJI.test(String(t)); }
-// Words for the third-miss reveal: a spoken answer word, else the answer text
+// Words for the gentle reveal: a spoken answer word, else the answer text
 // with pictures stripped, else a gentle "It's this picture."
 export function revealLines(round) {
   const shown = `That's okay! The answer is ${round.answer}. Let's keep going!`;
@@ -2159,4 +2299,60 @@ export function revealLines(round) {
   const say = word ? `That's okay! The answer is ${word}. Let's keep going!`
                    : "That's okay! It's this picture. Let's keep going!";
   return { shown, say };
+}
+
+/**
+ * Escalating gentle hints for a round (never repeats the same hint twice):
+ * - Miss 1: round.hint (gentle nudge)
+ * - Miss 2: clearer, more specific hint (round.hint2 or tailored visual/letter clue) + highlight
+ * - Miss 3: softly dims one wrong choice card ("Let's try one of these two!")
+ * - Miss 4+: gentle reveal via revealLines
+ */
+export function getEscalatingHint(round, missNumber) {
+  const h1 = round.hint || "Good try! Let's think and try again!";
+  if (missNumber <= 1) {
+    return { text: h1, say: round.hintSay || h1, highlight: false, dimWrong: false };
+  }
+  if (missNumber === 2) {
+    let h2 = round.hint2;
+    if (!h2) {
+      const ans = String(round.answer || '');
+      const cleanAns = ans.replace(_EMOJI, '').trim();
+      if (round.show) {
+        h2 = `Look closely at "${round.show}"${round.clue ? ` (${round.clue})` : ''}. Say each choice slowly to see what fits!`;
+      } else if (round.clock) {
+        h2 = round.clock.minute === 0
+          ? `Look right at the short purple hand on the clock—it points straight at ${round.clock.hour}!`
+          : `The long orange hand is down at the 6 (half past), and the short purple hand just passed ${round.clock.hour}!`;
+      } else if (round.tiles && round.tiles.length > 0) {
+        h2 = `Tap the glowing letter tiles above one by one: "${round.tiles.join(' · ')}" — then match that word!`;
+      } else if (round.visual && round.visual.kind === 'counton') {
+        h2 = `Point at ${round.visual.start} on the number line and hop ${round.visual.hop} step${round.visual.hop === 1 ? '' : 's'} forward to the yellow ? circle!`;
+      } else if (round.visual && round.visual.kind === 'doubles') {
+        h2 = `Count every single snowflake in both boxes together: ${round.visual.n} plus ${round.visual.n}!`;
+      } else if (round.visual && round.visual.a != null) {
+        h2 = round.visual.op === '-'
+          ? `Count ${round.visual.a} snowflakes, then take away ${round.visual.b} to see how many stay!`
+          : `Count the first box (${round.visual.a}), then keep counting the second box (${round.visual.b})!`;
+      } else if (round.visual && round.visual.kind === 'tally') {
+        h2 = `Each group with a red slash is 5! Count the red-slash groups by 5s, then count the extra lines one by one.`;
+      } else if (round.visual && round.visual.kind === 'shape') {
+        h2 = `Trace around the bright shape above with your finger—count every flat edge or corner!`;
+      } else if (cleanAns.length >= 2 && /^[a-zA-Z]/.test(cleanAns)) {
+        h2 = `Closer look! The answer starts with "${cleanAns[0].toUpperCase()}". Take your time and try again!`;
+      } else {
+        h2 = `You're so close! Look closely at the question and clues above, and give it another try!`;
+      }
+    }
+    if (h2 === h1) {
+      h2 = `You're getting closer! Look at the highlighted clue above and try one more time!`;
+    }
+    return { text: h2, say: h2, highlight: true, dimWrong: false };
+  }
+  return {
+    text: "Let's try one of these two! 💛",
+    say: "Let's try one of these two!",
+    highlight: true,
+    dimWrong: true,
+  };
 }

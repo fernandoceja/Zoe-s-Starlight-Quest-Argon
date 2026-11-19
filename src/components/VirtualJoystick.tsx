@@ -1,44 +1,61 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Input } from '../game/input.js';
 
+const HINT_STORAGE_KEY = 'zsq_joystick_hint_seen_v1';
+
 export const VirtualJoystick: React.FC = () => {
   const baseRef = useRef<HTMLDivElement>(null);
   const [knobPos, setKnobPos] = useState({ x: 0, y: 0 });
-  const [touching, setTouching] = useState(false);
-  const touchIdRef = useRef<number | null>(null);
+  const [active, setActive] = useState(false);
+  const [showHint, setShowHint] = useState(false);
+  const pointerIdRef = useRef<number | null>(null);
 
   const radius = 48; // Max radius in px
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (touchIdRef.current !== null) return;
-    const touch = e.changedTouches[0];
-    touchIdRef.current = touch.identifier;
-    setTouching(true);
-    updateKnob(touch.clientX, touch.clientY);
-  };
+  // Show a short "Drag to walk" hint for the first 10 seconds of the first play
+  useEffect(() => {
+    let seen = false;
+    try {
+      seen = !!window.localStorage.getItem(HINT_STORAGE_KEY);
+    } catch {
+      seen = false;
+    }
+    if (!seen) {
+      setShowHint(true);
+      const timer = window.setTimeout(() => {
+        setShowHint(false);
+        try {
+          window.localStorage.setItem(HINT_STORAGE_KEY, '1');
+        } catch {
+          // Ignore storage errors
+        }
+      }, 10000);
+      return () => window.clearTimeout(timer);
+    }
+  }, []);
 
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!touching || touchIdRef.current === null) return;
-    for (let i = 0; i < e.changedTouches.length; i++) {
-      if (e.changedTouches[i].identifier === touchIdRef.current) {
-        updateKnob(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
-        break;
-      }
+  const dismissHint = () => {
+    if (!showHint) return;
+    setShowHint(false);
+    try {
+      window.localStorage.setItem(HINT_STORAGE_KEY, '1');
+    } catch {
+      // Ignore storage errors
     }
   };
 
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (touchIdRef.current === null) return;
-    for (let i = 0; i < e.changedTouches.length; i++) {
-      if (e.changedTouches[i].identifier === touchIdRef.current) {
-        touchIdRef.current = null;
-        setTouching(false);
-        setKnobPos({ x: 0, y: 0 });
-        Input.setJoystick(0, 0);
-        break;
-      }
-    }
+  const resetJoystick = () => {
+    pointerIdRef.current = null;
+    setActive(false);
+    setKnobPos({ x: 0, y: 0 });
+    Input.setJoystick(0, 0);
   };
+
+  useEffect(() => {
+    return () => {
+      Input.setJoystick(0, 0);
+    };
+  }, []);
 
   const updateKnob = (clientX: number, clientY: number) => {
     if (!baseRef.current) return;
@@ -65,25 +82,96 @@ export const VirtualJoystick: React.FC = () => {
     Input.setJoystick(normX, normZ);
   };
 
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (pointerIdRef.current !== null) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dismissHint();
+    pointerIdRef.current = e.pointerId;
+    setActive(true);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Ignore if pointer capture is unavailable
+    }
+    updateKnob(e.clientX, e.clientY);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (pointerIdRef.current !== e.pointerId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    updateKnob(e.clientX, e.clientY);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (pointerIdRef.current !== e.pointerId) return;
+    e.stopPropagation();
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // Ignore release errors
+    }
+    resetJoystick();
+  };
+
   return (
-    <div className="fixed bottom-6 left-6 z-20 pointer-events-auto touch-none select-none sm:block">
+    <div className="fixed bottom-5 left-5 z-20 pointer-events-auto touch-none select-none flex flex-col items-center gap-1.5">
+      {showHint && (
+        <div className="px-3 py-1 rounded-full bg-white/95 border-2 border-[#ebd373] shadow-md text-sm font-black text-amber-950 whitespace-nowrap pointer-events-none">
+          Drag to walk 👆
+        </div>
+      )}
       <div
         ref={baseRef}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onTouchCancel={handleTouchEnd}
-        className="w-28 h-28 rounded-full bg-white/70 backdrop-blur-md border-4 border-[#ebd373] shadow-lg flex items-center justify-center relative active:scale-95 transition-transform"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onLostPointerCapture={handlePointerUp}
+        aria-label="Walk joystick — drag to move Princess Zoe"
+        className={`w-32 h-32 rounded-full bg-white/85 border-4 border-[#ebd373] shadow-lg flex items-center justify-center relative transition-transform touch-none select-none ${
+          active ? 'scale-95 cursor-grabbing ring-4 ring-amber-300/60' : 'cursor-grab'
+        }`}
       >
-        {/* Joystick Center Indicator */}
-        <div className="w-4 h-4 rounded-full bg-amber-200/80 pointer-events-none" />
+        {/* Subtle Directional Arrow Marks around the Ring */}
+        <span
+          aria-hidden="true"
+          className="absolute top-1.5 left-1/2 -translate-x-1/2 text-xs font-black text-amber-700/80 pointer-events-none leading-none"
+        >
+          ▲
+        </span>
+        <span
+          aria-hidden="true"
+          className="absolute bottom-1.5 left-1/2 -translate-x-1/2 text-xs font-black text-amber-700/80 pointer-events-none leading-none"
+        >
+          ▼
+        </span>
+        <span
+          aria-hidden="true"
+          className="absolute left-2 top-1/2 -translate-y-1/2 text-xs font-black text-amber-700/80 pointer-events-none leading-none"
+        >
+          ◀
+        </span>
+        <span
+          aria-hidden="true"
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-black text-amber-700/80 pointer-events-none leading-none"
+        >
+          ▶
+        </span>
 
-        {/* Joystick Movable Knob */}
+        {/* Joystick Center Indicator */}
+        <div className="w-4 h-4 rounded-full bg-amber-200 pointer-events-none" />
+
+        {/* Larger Movable Knob */}
         <div
           style={{
             transform: `translate(${knobPos.x}px, ${knobPos.y}px)`,
           }}
-          className="absolute w-12 h-12 rounded-full bg-gradient-to-tr from-amber-400 to-yellow-300 border-2 border-white shadow-md pointer-events-none flex items-center justify-center text-sm font-black text-amber-950"
+          className="absolute w-14 h-14 rounded-full bg-gradient-to-tr from-amber-400 to-yellow-300 border-3 border-white shadow-md pointer-events-none flex items-center justify-center text-xl font-black text-amber-950"
         >
           👑
         </div>

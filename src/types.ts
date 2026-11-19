@@ -49,8 +49,11 @@ export interface Round {
   answer: string;
   answerSay?: string;
   hint: string;
+  hint2?: string;
   hintSay?: string;
   pic?: string;
+  clue?: string;
+  word?: string;
   clock?: { hour: number; minute: number };
   visual?: any;
   tiles?: string[];

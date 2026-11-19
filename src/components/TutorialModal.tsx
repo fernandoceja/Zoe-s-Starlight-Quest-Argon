@@ -98,15 +98,16 @@ export const TutorialModal: React.FC<TutorialModalProps> = ({ onComplete }) => {
           {step.title}
         </h2>
 
-        {/* Description */}
-        <p className="text-base sm:text-lg font-medium text-slate-700 mb-8 min-h-[4rem] px-2 flex items-center justify-center">
+        {/* Description (fixed height so Next button stays stationary across all 5 steps) */}
+        <p className="text-base sm:text-lg font-bold text-slate-800 mb-6 h-24 px-2 flex items-center justify-center">
           {step.text}
         </p>
 
         {/* Audio Replay Button */}
         <button
+          type="button"
           onClick={() => Narrator.speakText(step.speech, { pitch: 1.15, rate: 0.95 })}
-          className="mb-6 inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-white/90 border border-amber-300 text-xs font-bold text-amber-800 shadow-sm active:scale-95"
+          className="mb-6 inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white border-2 border-amber-400 text-sm font-extrabold text-amber-950 shadow-sm active:scale-95"
           aria-label="Read again"
         >
           <span>🔊</span>
@@ -116,15 +117,17 @@ export const TutorialModal: React.FC<TutorialModalProps> = ({ onComplete }) => {
         {/* Navigation Buttons */}
         <div className="flex items-center justify-between gap-3">
           <button
+            type="button"
             onClick={handleSkip}
-            className="px-5 py-3 rounded-full text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors"
+            className="min-h-[48px] px-5 py-3 rounded-full text-base font-bold text-slate-700 hover:text-slate-950 transition-colors"
           >
             Skip
           </button>
 
           <button
+            type="button"
             onClick={handleNext}
-            className="px-8 py-3.5 rounded-full bg-gradient-to-r from-amber-400 to-yellow-400 text-amber-950 font-black text-base shadow-lg border-2 border-white hover:brightness-105 active:scale-95 transition-all"
+            className="min-w-[160px] min-h-[52px] px-8 py-3.5 rounded-full bg-gradient-to-r from-amber-400 to-yellow-400 text-amber-950 font-black text-lg shadow-lg border-2 border-white hover:brightness-105 active:scale-95 transition-all"
           >
             {stepIdx === STEPS.length - 1 ? "Let's Play! 👑" : 'Next ➡️'}
           </button>

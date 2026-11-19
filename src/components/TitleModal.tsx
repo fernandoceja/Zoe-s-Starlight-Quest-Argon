@@ -61,7 +61,7 @@ export const TitleModal: React.FC<TitleModalProps> = ({
         </div>
 
         {/* Reassuring footer for kids */}
-        <p className="mt-5 text-xs font-semibold text-slate-500">
+        <p className="mt-5 text-sm font-bold text-slate-700">
           No timers, no penalties, and always gentle hints. Have fun! 💖
         </p>
       </div>
