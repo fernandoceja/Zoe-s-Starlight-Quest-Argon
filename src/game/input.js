@@ -39,6 +39,9 @@ export const Input = {
   _interactEdge: false,
   _blockUntil: 0,
   _pauseEdge: false,
+  _mapEdge: false,
+  _cancelEdge: false,
+  _padZoom: 0,
   _inited: false,
   _onKeyDown: null,
   _onKeyUp: null,
@@ -65,6 +68,7 @@ export const Input = {
       this._keys[e.code] = true;
       if (e.code === 'KeyE' || e.code === 'Space') this._interactEdge = true;
       if (e.code === 'KeyP' || e.code === 'Escape') this._pauseEdge = true;
+      if (e.code === 'KeyM') this._mapEdge = true;
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code) &&
           typeof e.preventDefault === 'function') {
         e.preventDefault();
@@ -83,6 +87,7 @@ export const Input = {
       this.gamepadName = null;
       this._pad.x = 0; this._pad.z = 0;
       this._padButtons = [];
+      this._padZoom = 0;
       if (typeof this.onGamepadChange === 'function') this.onGamepadChange(false, id);
     };
     window.addEventListener('gamepadconnected', this._onPadConnected);
@@ -109,6 +114,7 @@ export const Input = {
       this.gamepadName = null;
       this._pad.x = 0; this._pad.z = 0;
       this._padButtons = [];
+      this._padZoom = 0;
       return;
     }
     this.gamepadName = pad.id || 'controller';
@@ -119,9 +125,15 @@ export const Input = {
     this._pad.z = dz.y;
     const btns = pad.buttons || [];
     const pressed = (i) => !!(btns[i] && btns[i].pressed);
+    const val = (i) => (btns[i] ? (typeof btns[i].value === 'number' ? btns[i].value : (btns[i].pressed ? 1 : 0)) : 0);
     const prev = this._padButtons;
     if (pressed(0) && !prev[0]) this._interactEdge = true; // Cross / A
+    if (pressed(1) && !prev[1]) this._cancelEdge = true;   // Circle / B (closes Sky View)
+    if ((pressed(3) && !prev[3]) || (pressed(8) && !prev[8])) this._mapEdge = true; // Triangle/Y or Select/View
     if (pressed(9) && !prev[9]) this._pauseEdge = true;    // Options / Start
+    const zoomIn = Math.max(val(5), val(7));               // R1 / R2
+    const zoomOut = Math.max(val(4), val(6));              // L1 / L2
+    this._padZoom = zoomIn - zoomOut;
     this._padButtons = btns.map((b) => !!b.pressed);
   },
 
@@ -176,6 +188,25 @@ export const Input = {
     const v = this._pauseEdge;
     this._pauseEdge = false;
     return v;
+  },
+
+  /** True once per press of M or gamepad Triangle/Y / Select/View. */
+  consumeMap() {
+    const v = this._mapEdge;
+    this._mapEdge = false;
+    return v;
+  },
+
+  /** True once per press of gamepad Circle/B. */
+  consumeCancel() {
+    const v = this._cancelEdge;
+    this._cancelEdge = false;
+    return v;
+  },
+
+  /** Continuous gamepad zoom axis (-1 zoom out, +1 zoom in). */
+  getPadZoom() {
+    return this._padZoom || 0;
   },
 
   /**

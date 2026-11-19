@@ -50,6 +50,7 @@ import { WardrobeModal } from './components/WardrobeModal';
 import { TreasureBookModal } from './components/TreasureBookModal';
 import { ParentCorner } from './components/ParentCorner';
 import { VirtualJoystick } from './components/VirtualJoystick';
+import { SkyViewOverlay, SkyViewProjection } from './components/SkyViewOverlay';
 import { PrincessId, Round } from './types';
 
 const NPC_IDS = NPC_ORDER as PrincessId[];
@@ -85,6 +86,8 @@ export const App: React.FC = () => {
   const [pauseTab, setPauseTab] = useState<
     'menu' | 'wardrobe' | 'treasurebook' | 'tutorial' | 'parent'
   >('menu');
+  const [introActive, setIntroActive] = useState(false);
+  const [skyViewMode, setSkyViewMode] = useState<'off' | 'entering' | 'active' | 'exiting'>('off');
 
   const [activeNPC, setActiveNPC] = useState<PrincessId | null>(null);
   const [nearNPC, setNearNPC] = useState<PrincessId | null>(null);
@@ -131,7 +134,13 @@ export const App: React.FC = () => {
   pauseTabRef.current = pauseTab;
   const activeNPCRef = useRef(activeNPC);
   activeNPCRef.current = activeNPC;
+  const introActiveRef = useRef(introActive);
+  introActiveRef.current = introActive;
+  const skyViewModeRef = useRef(skyViewMode);
+  skyViewModeRef.current = skyViewMode;
   const pauseActionStampRef = useRef(0);
+  const skyActionStampRef = useRef(0);
+  const skyProjectHandlerRef = useRef<((proj: SkyViewProjection) => void) | null>(null);
 
   const isPausableState = (s: typeof gameState) =>
     s === 'roam' ||
@@ -203,7 +212,28 @@ export const App: React.FC = () => {
         onPauseRequest() {
           // Guard against double-toggle when React's keydown already handled P/Esc
           if (Date.now() - pauseActionStampRef.current < 160) return;
+          if (skyViewModeRef.current !== 'off') return;
           handleTogglePauseRef.current();
+        },
+        onIntroChange(active: boolean) {
+          setIntroActive(!!active);
+        },
+        onSkyViewRequest() {
+          if (Date.now() - skyActionStampRef.current < 160) return;
+          handleOpenSkyViewRef.current();
+        },
+        onSkyViewCloseRequest() {
+          if (Date.now() - skyActionStampRef.current < 160) return;
+          handleCloseSkyViewRef.current();
+        },
+        onSkyViewModeChange(mode: 'off' | 'entering' | 'active' | 'exiting') {
+          setSkyViewMode(mode);
+          if (mode === 'off' && gameStateRef.current === 'roam' && !pausedRef.current) {
+            worldRef.current?.setInputEnabled(true);
+          }
+        },
+        onSkyViewProject(proj: SkyViewProjection) {
+          skyProjectHandlerRef.current?.(proj);
         },
         onWorldTap() {
           SoundFX.chime();
@@ -398,12 +428,51 @@ export const App: React.FC = () => {
     }
   };
 
+  // Sky View (Bird's-Eye Map Mode — available only during roam, never during intro/modals/pause)
+  const handleOpenSkyView = () => {
+    if (
+      gameStateRef.current !== 'roam' ||
+      pausedRef.current ||
+      introActiveRef.current ||
+      skyViewModeRef.current !== 'off'
+    ) {
+      return;
+    }
+    skyActionStampRef.current = Date.now();
+    Input.consumeMap();
+    Input.consumeCancel();
+    Narrator.stop();
+    SoundFX.chime();
+    if (worldRef.current) {
+      worldRef.current.setInputEnabled(false);
+      const started = worldRef.current.enterSkyView();
+      if (!started) {
+        worldRef.current.setInputEnabled(true);
+      }
+    }
+  };
+
+  const handleCloseSkyView = () => {
+    if (skyViewModeRef.current === 'off' || skyViewModeRef.current === 'exiting') return;
+    skyActionStampRef.current = Date.now();
+    pauseActionStampRef.current = Date.now();
+    Input.consumeMap();
+    Input.consumeCancel();
+    Input.consumePause();
+    SoundFX.pop();
+    worldRef.current?.exitSkyView();
+  };
+
   const handleTogglePauseRef = useRef(handleTogglePause);
   handleTogglePauseRef.current = handleTogglePause;
   const handleLeavePrincessRef = useRef(handleLeavePrincess);
   handleLeavePrincessRef.current = handleLeavePrincess;
+  const handleOpenSkyViewRef = useRef(handleOpenSkyView);
+  handleOpenSkyViewRef.current = handleOpenSkyView;
+  const handleCloseSkyViewRef = useRef(handleCloseSkyView);
+  handleCloseSkyViewRef.current = handleCloseSkyView;
 
-  // Global Keyboard Shortcuts: Esc/P pause anywhere, Esc also closes dialogue
+  // Global Keyboard Shortcuts: M toggles Sky View; Esc/P pause anywhere; Esc also closes Sky View or dialogue
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.repeat) return;
@@ -412,7 +481,30 @@ export const App: React.FC = () => {
         return;
       }
 
+      if (e.code === 'KeyM') {
+        if (skyViewModeRef.current === 'entering' || skyViewModeRef.current === 'active') {
+          handleCloseSkyViewRef.current();
+          return;
+        }
+        if (
+          gameStateRef.current === 'roam' &&
+          !pausedRef.current &&
+          !introActiveRef.current &&
+          skyViewModeRef.current === 'off'
+        ) {
+          handleOpenSkyViewRef.current();
+        }
+        return;
+      }
+
       if (e.code === 'Escape') {
+        if (skyViewModeRef.current === 'entering' || skyViewModeRef.current === 'active') {
+          handleCloseSkyViewRef.current();
+          return;
+        }
+        if (skyViewModeRef.current === 'exiting') {
+          return;
+        }
         if (pausedRef.current) {
           pauseActionStampRef.current = Date.now();
           Input.consumePause();
@@ -436,6 +528,7 @@ export const App: React.FC = () => {
       }
 
       if (e.code === 'KeyP') {
+        if (skyViewModeRef.current !== 'off') return;
         if (pausedRef.current || isPausableState(gameStateRef.current)) {
           handleTogglePauseRef.current();
         }
@@ -661,7 +754,7 @@ export const App: React.FC = () => {
       <div ref={containerRef} className="absolute inset-0 z-0" />
 
       {/* Floating HUD */}
-      {gameState === 'roam' && !paused && (
+      {gameState === 'roam' && !paused && skyViewMode === 'off' && (
         <>
           <HUD
             stars={stars}
@@ -679,6 +772,8 @@ export const App: React.FC = () => {
             onToggleMute={handleToggleMute}
             onPause={handlePause}
             hidePauseButton={true}
+            showSkyView={!introActive}
+            onOpenSkyView={handleOpenSkyView}
             onInteract={() => {
               if (nearNPC) handleStartQuest(nearNPC);
             }}
@@ -688,8 +783,22 @@ export const App: React.FC = () => {
         </>
       )}
 
+      {/* Sky View ("Bird's-Eye View") Map Overlay */}
+      {skyViewMode !== 'off' && (
+        <SkyViewOverlay
+          mode={skyViewMode}
+          doneLands={doneLands}
+          nextNPC={nextNPC}
+          projectHandlerRef={skyProjectHandlerRef}
+          onPanScreen={(dx, dy) => worldRef.current?.panSkyViewByScreen(dx, dy)}
+          onZoomFactor={(factor) => worldRef.current?.zoomSkyViewByFactor(factor)}
+          onZoomStep={(dir) => worldRef.current?.zoomSkyViewStep(dir)}
+          onClose={handleCloseSkyView}
+        />
+      )}
+
       {/* Always-Visible Big Pause Button (>= 56px, Top-Right Corner) across roam, dialogue, quests, celebrations */}
-      {!paused && isPausableState(gameState) && (
+      {!paused && skyViewMode === 'off' && isPausableState(gameState) && (
         <button
           type="button"
           onClick={handlePause}

@@ -246,6 +246,11 @@ export function createWorld(container, hooks) {
   const onGateTap = typeof hooks.onGateTap === 'function' ? hooks.onGateTap : () => {};
   const onTreasure = typeof hooks.onTreasure === 'function' ? hooks.onTreasure : () => {};
   const treasuresGot = typeof hooks.treasuresGot === 'function' ? hooks.treasuresGot : () => [];
+  const onIntroChange = typeof hooks.onIntroChange === 'function' ? hooks.onIntroChange : () => {};
+  const onSkyViewRequest = typeof hooks.onSkyViewRequest === 'function' ? hooks.onSkyViewRequest : () => {};
+  const onSkyViewCloseRequest = typeof hooks.onSkyViewCloseRequest === 'function' ? hooks.onSkyViewCloseRequest : () => {};
+  const onSkyViewModeChange = typeof hooks.onSkyViewModeChange === 'function' ? hooks.onSkyViewModeChange : () => {};
+  const onSkyViewProject = typeof hooks.onSkyViewProject === 'function' ? hooks.onSkyViewProject : () => {};
 
   const isHandheld = (() => {
     try {
@@ -264,6 +269,8 @@ export function createWorld(container, hooks) {
   const renderScene = env.renderFrame;
 
   let worldPaused = false;
+  let skyMode = 'off'; // 'off' | 'entering' | 'active' | 'exiting'
+  let skyLabelAlpha = 0;
 
   // --- Colliders & Shared Helpers -------------------------------------------
   const colliders = [];
@@ -1691,9 +1698,15 @@ export function createWorld(container, hooks) {
   const introLook0 = new THREE.Vector3(CASTLE_POS.x, 7.0, CASTLE_POS.z - 0.5);
   const introLook1 = new THREE.Vector3(-6.0, 3.2, -3.5);
 
+  function setIntroActive(next) {
+    const val = !!next;
+    if (introActive === val) return;
+    introActive = val;
+    onIntroChange(introActive);
+  }
   function skipIntro() {
     if (!introActive) return;
-    introActive = false;
+    setIntroActive(false);
   }
   const onAnySkipKey = () => skipIntro();
   window.addEventListener('keydown', onAnySkipKey);
@@ -2081,6 +2094,36 @@ export function createWorld(container, hooks) {
   destBeacon.visible = false;
   scene.add(destBeacon);
 
+  // --- Sky View Dotted Sparkle Line (instanced, shown only in Bird's-Eye View) ---
+  const SKY_TRAIL_MAX = 48;
+  const skyTrailMat = new THREE.MeshBasicMaterial({
+    map: fairySparkleTex,
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    depthTest: false,
+    side: THREE.DoubleSide,
+  });
+  const skyTrailMesh = new THREE.InstancedMesh(fairyDustGeo, skyTrailMat, SKY_TRAIL_MAX);
+  skyTrailMesh.frustumCulled = false;
+  skyTrailMesh.renderOrder = 10;
+  skyTrailMesh.visible = false;
+  skyTrailMesh.raycast = () => {};
+  const _skyTrailDummy = new THREE.Object3D();
+  const _skyTrailCore = new THREE.Color(0xffd75e);
+  const _skyTrailGlow = new THREE.Color(0xfff2b2);
+  const _skyTrailCol = new THREE.Color();
+  for (let i = 0; i < SKY_TRAIL_MAX; i++) {
+    _skyTrailDummy.scale.setScalar(0.001);
+    _skyTrailDummy.updateMatrix();
+    skyTrailMesh.setMatrixAt(i, _skyTrailDummy.matrix);
+    skyTrailMesh.setColorAt(i, _skyTrailCore);
+  }
+  skyTrailMesh.instanceMatrix.needsUpdate = true;
+  if (skyTrailMesh.instanceColor) skyTrailMesh.instanceColor.needsUpdate = true;
+  scene.add(skyTrailMesh);
+
   function setGuideTarget(npcId) {
     guideTargetId = npcId && npcs[npcId] ? npcId : null;
   }
@@ -2175,7 +2218,12 @@ export function createWorld(container, hooks) {
     camera.aspect = w / Math.max(1, h);
     frameForAspect(camera.aspect);
     env.resize(w, h);
-    if (worldPaused) renderScene();
+    if (skyMode !== 'off') {
+      renderScene();
+      emitSkyProjection(skyMode === 'active' ? 1 : skyLabelAlpha);
+    } else if (worldPaused) {
+      renderScene();
+    }
   };
   window.addEventListener('resize', onResize);
   onResize();
@@ -2338,7 +2386,7 @@ export function createWorld(container, hooks) {
       }
       camTarget.copy(introCam);
       lookTarget.copy(introLook);
-      if (u >= 1) introActive = false;
+      if (u >= 1) setIntroActive(false);
     } else {
       if (camSnap) {
         camSnap = false;
@@ -2535,9 +2583,410 @@ export function createWorld(container, hooks) {
 
     const didInteract = Input.consumeInteract();
     const didPause = Input.consumePause();
+    const didMap = Input.consumeMap();
+    Input.consumeCancel();
     if (didInteract && introActive) skipIntro();
     else if (inputEnabled && didInteract && nearNPC) onInteractRequest(nearNPC);
+    if (didMap && inputEnabled && !introActive && !focusNpc && !worldPaused) onSkyViewRequest();
     if (didPause) onPauseRequest();
+  }
+
+  // --- Sky View (Bird's-Eye Map Mode: smooth fly-up, frozen world, pan/zoom) ---
+  const SKY_FLY_DUR = 1.5;
+  const SKY_MIN_H = 36;
+  const SKY_MAX_H = 148;
+  const SKY_MAX_PAN_R = 54;
+  const SKY_PITCH_RATIO = 0.56;
+
+  let skyFlyT = 0;
+  let skyFlyDur = SKY_FLY_DUR;
+  let skyTargetX = 0;
+  let skyTargetZ = 0;
+  let skyCurX = 0;
+  let skyCurZ = 0;
+  let skyTargetH = 104;
+  let skyCurH = 104;
+  let savedFogDensity = scene.fog ? scene.fog.density : 0.0038;
+  let skyRafId = 0;
+  let skySoftTimer = 0;
+  const skyClock = new THREE.Clock();
+
+  const savedCamPos = new THREE.Vector3();
+  const savedLookPos = new THREE.Vector3();
+  const skyFlyStartCam = new THREE.Vector3();
+  const skyFlyStartLook = new THREE.Vector3();
+  const skyCurCam = new THREE.Vector3();
+  const skyCurLook = new THREE.Vector3();
+  const skyGoalCam = new THREE.Vector3();
+  const skyGoalLook = new THREE.Vector3();
+  const _skyProjVec = new THREE.Vector3();
+  const _skyProjLands = {};
+
+  function defaultSkyHeight() {
+    const a = camera.aspect || 1.33;
+    if (a < 0.72) return 136;
+    if (a < 1.0) return 120;
+    if (a < 1.35) return 108;
+    return 100;
+  }
+
+  function clampSkyPan(x, z) {
+    const d = Math.hypot(x, z);
+    if (d > SKY_MAX_PAN_R) {
+      const k = SKY_MAX_PAN_R / d;
+      return { x: x * k, z: z * k };
+    }
+    return { x, z };
+  }
+
+  function easeInOutCubic(u) {
+    const t = Math.max(0, Math.min(1, u));
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  }
+
+  function setSkyMode(next) {
+    if (skyMode === next) return;
+    skyMode = next;
+    onSkyViewModeChange(skyMode);
+  }
+
+  function updateSkyTrail(alpha, nowSec) {
+    const guideNpc = guideTargetId ? npcs[guideTargetId] : null;
+    if (!guideNpc || alpha <= 0.02) {
+      skyTrailMesh.visible = false;
+      return;
+    }
+
+    const sx = playerPos.x;
+    const sz = playerPos.z;
+    const ex = guideNpc.group.position.x;
+    const ez = guideNpc.group.position.z;
+    const dx = ex - sx;
+    const dz = ez - sz;
+    const dist = Math.hypot(dx, dz);
+    if (dist < 1.5) {
+      skyTrailMesh.visible = false;
+      return;
+    }
+
+    const theme = PRINCESS_TRAIL_COLORS[guideTargetId] || PRINCESS_TRAIL_COLORS.belle;
+    _skyTrailCore.setHex(theme.core);
+    _skyTrailGlow.setHex(theme.glow);
+
+    const dotCount = Math.min(SKY_TRAIL_MAX, Math.max(5, Math.floor(dist / 2.25)));
+    const phaseShift = calmMotion ? 0 : (nowSec * 0.42) % 1;
+    const baseSize = THREE.MathUtils.clamp(skyCurH * 0.026, 1.15, 3.1);
+
+    skyTrailMesh.visible = true;
+    skyTrailMesh.count = dotCount;
+    skyTrailMat.opacity = alpha * 0.94;
+
+    for (let i = 0; i < dotCount; i++) {
+      const u = (i + 0.5 + phaseShift) / dotCount;
+      const clampedU = Math.min(0.97, Math.max(0.03, u));
+      const px = sx + dx * clampedU;
+      const pz = sz + dz * clampedU;
+      const arch = Math.sin(clampedU * Math.PI) * Math.min(2.6, dist * 0.06);
+      const py = Math.max(0, walkHeightAt(px, pz)) + 2.0 + arch;
+      const twinkle = calmMotion ? 0.9 : 0.72 + 0.28 * Math.sin(nowSec * 5.2 + i * 1.4);
+      const endFade = Math.sin(clampedU * Math.PI);
+      const sc = baseSize * (0.68 + 0.42 * endFade) * twinkle;
+
+      _skyTrailDummy.position.set(px, py, pz);
+      _skyTrailDummy.quaternion.copy(camera.quaternion);
+      _skyTrailDummy.scale.setScalar(Math.max(0.001, sc));
+      _skyTrailDummy.updateMatrix();
+      skyTrailMesh.setMatrixAt(i, _skyTrailDummy.matrix);
+
+      _skyTrailCol.copy(_skyTrailCore).lerp(_skyTrailGlow, 0.35 + 0.55 * twinkle);
+      skyTrailMesh.setColorAt(i, _skyTrailCol);
+    }
+    skyTrailMesh.instanceMatrix.needsUpdate = true;
+    if (skyTrailMesh.instanceColor) skyTrailMesh.instanceColor.needsUpdate = true;
+  }
+
+  function projectWorldPoint(x, y, z, w, h) {
+    _skyProjVec.set(x, y, z).project(camera);
+    const visible =
+      _skyProjVec.z >= -1 &&
+      _skyProjVec.z <= 1 &&
+      _skyProjVec.x >= -1.25 &&
+      _skyProjVec.x <= 1.25 &&
+      _skyProjVec.y >= -1.25 &&
+      _skyProjVec.y <= 1.25;
+    return {
+      x: (_skyProjVec.x * 0.5 + 0.5) * w,
+      y: (-_skyProjVec.y * 0.5 + 0.5) * h,
+      visible,
+    };
+  }
+
+  function emitSkyProjection(alpha) {
+    const w = container.clientWidth || window.innerWidth;
+    const h = container.clientHeight || window.innerHeight;
+    camera.updateMatrixWorld();
+
+    const zoe = projectWorldPoint(playerPos.x, playerPos.y + 2.4, playerPos.z, w, h);
+    for (const id of NPC_ORDER) {
+      const npc = npcs[id];
+      if (!npc) continue;
+      _skyProjLands[id] = projectWorldPoint(
+        npc.group.position.x,
+        npc.baseY + 4.2,
+        npc.group.position.z,
+        w,
+        h
+      );
+    }
+
+    onSkyViewProject({
+      alpha,
+      zoe,
+      lands: _skyProjLands,
+    });
+  }
+
+  function finishExitSkyView() {
+    cancelAnimationFrame(skyRafId);
+    clearTimeout(skySoftTimer);
+    skyTrailMesh.visible = false;
+    camera.position.copy(savedCamPos);
+    camTarget.copy(savedCamPos);
+    lookTarget.copy(savedLookPos);
+    camera.lookAt(savedLookPos);
+    skyMesh.position.copy(camera.position);
+    if (scene.fog) scene.fog.density = savedFogDensity;
+    skyLabelAlpha = 0;
+    setSkyMode('off');
+
+    // Resume normal world simulation seamlessly from the exact frozen state
+    worldPaused = false;
+    clearInterval(padPollTimer);
+    clock.getDelta();
+    Input.consumeInteract();
+    Input.consumePause();
+    Input.consumeMap();
+    Input.consumeCancel();
+    Input.clearInteract(250);
+    restartMeasure();
+    renderScene();
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function skyLoop(now) {
+    if (disposed || skyMode === 'off') return;
+    if (!isSoftwareGl) skyRafId = requestAnimationFrame(skyLoop);
+
+    const dt = Math.min(skyClock.getDelta(), 0.05);
+    const nowSec = (typeof now === 'number' ? now : performance.now()) * 0.001;
+
+    // Poll keyboard arrows/WASD & gamepad controls for Sky View panning/zooming/closing
+    Input.poll();
+    const didMap = Input.consumeMap();
+    const didCancel = Input.consumeCancel();
+    Input.consumeInteract();
+    Input.consumePause();
+
+    if ((didMap || didCancel) && (skyMode === 'active' || skyMode === 'entering')) {
+      onSkyViewCloseRequest();
+    }
+
+    if (skyMode === 'entering') {
+      skyFlyT += dt;
+      const u = Math.min(1, skyFlyT / Math.max(0.01, skyFlyDur));
+      const e = easeInOutCubic(u);
+      skyGoalLook.set(skyTargetX, 0, skyTargetZ);
+      skyGoalCam.set(skyTargetX, skyTargetH, skyTargetZ + skyTargetH * SKY_PITCH_RATIO);
+
+      skyCurCam.copy(skyFlyStartCam).lerp(skyGoalCam, e);
+      skyCurLook.copy(skyFlyStartLook).lerp(skyGoalLook, e);
+      camera.position.copy(skyCurCam);
+      camera.lookAt(skyCurLook);
+      skyMesh.position.copy(camera.position);
+
+      if (scene.fog) {
+        scene.fog.density = savedFogDensity * (1 - 0.56 * e);
+      }
+      skyLabelAlpha = THREE.MathUtils.smoothstep(u, 0.45, 0.98);
+      updateSkyTrail(THREE.MathUtils.smoothstep(u, 0.25, 0.9), nowSec);
+      renderScene();
+      emitSkyProjection(skyLabelAlpha);
+
+      if (u >= 1) {
+        skyCurX = skyTargetX;
+        skyCurZ = skyTargetZ;
+        skyCurH = skyTargetH;
+        skyLabelAlpha = 1;
+        setSkyMode('active');
+      }
+    } else if (skyMode === 'active') {
+      // Arrow keys / WASD / gamepad left stick pan within world bounds
+      const iv = Input.vector;
+      if (Math.abs(iv.x) > 0.01 || Math.abs(iv.z) > 0.01) {
+        const panSpeed = skyCurH * 0.68;
+        const next = clampSkyPan(
+          skyTargetX + iv.x * panSpeed * dt,
+          skyTargetZ + iv.z * panSpeed * dt
+        );
+        skyTargetX = next.x;
+        skyTargetZ = next.z;
+      }
+
+      // Gamepad bumper/trigger zoom
+      const padZoom = Input.getPadZoom();
+      if (Math.abs(padZoom) > 0.05) {
+        skyTargetH = THREE.MathUtils.clamp(
+          skyTargetH * Math.pow(0.45, padZoom * dt),
+          SKY_MIN_H,
+          SKY_MAX_H
+        );
+      }
+
+      const damp = calmMotion ? 1 : 1 - Math.exp(-12 * dt);
+      skyCurX += (skyTargetX - skyCurX) * damp;
+      skyCurZ += (skyTargetZ - skyCurZ) * damp;
+      skyCurH += (skyTargetH - skyCurH) * damp;
+
+      skyCurLook.set(skyCurX, 0, skyCurZ);
+      skyCurCam.set(skyCurX, skyCurH, skyCurZ + skyCurH * SKY_PITCH_RATIO);
+      camera.position.copy(skyCurCam);
+      camera.lookAt(skyCurLook);
+      skyMesh.position.copy(camera.position);
+      if (scene.fog) scene.fog.density = savedFogDensity * 0.44;
+
+      skyLabelAlpha = 1;
+      updateSkyTrail(1, nowSec);
+      renderScene();
+      emitSkyProjection(1);
+    } else if (skyMode === 'exiting') {
+      skyFlyT += dt;
+      const u = Math.min(1, skyFlyT / Math.max(0.01, skyFlyDur));
+      const e = easeInOutCubic(u);
+
+      skyCurCam.copy(skyFlyStartCam).lerp(savedCamPos, e);
+      skyCurLook.copy(skyFlyStartLook).lerp(savedLookPos, e);
+      camera.position.copy(skyCurCam);
+      camera.lookAt(skyCurLook);
+      skyMesh.position.copy(camera.position);
+
+      if (scene.fog) {
+        scene.fog.density = savedFogDensity * (0.44 + 0.56 * e);
+      }
+      skyLabelAlpha = 1 - THREE.MathUtils.smoothstep(u, 0.0, 0.42);
+      updateSkyTrail(1 - THREE.MathUtils.smoothstep(u, 0.0, 0.55), nowSec);
+      renderScene();
+      emitSkyProjection(skyLabelAlpha);
+
+      if (u >= 1) {
+        finishExitSkyView();
+        return;
+      }
+    }
+
+    if (isSoftwareGl && !disposed && skyMode !== 'off') {
+      skySoftTimer = setTimeout(() => {
+        if (!disposed && skyMode !== 'off') skyRafId = requestAnimationFrame(skyLoop);
+      }, 80);
+    }
+  }
+
+  function enterSkyView() {
+    if (disposed || skyMode !== 'off' || worldPaused || introActive || focusNpc) return false;
+
+    // Save exact normal follow camera & atmosphere state for exact return
+    savedCamPos.copy(camera.position);
+    savedLookPos.copy(lookTarget);
+    savedFogDensity = scene.fog ? scene.fog.density : 0.0038;
+
+    // Reuse pause freeze logic: freeze world time, NPCs, world life, and hide ground fairy trail
+    worldPaused = true;
+    trailFade = 0;
+    fairyTrailGroup.visible = false;
+    cancelAnimationFrame(rafId);
+    clearTimeout(softPauseTimer);
+    clearInterval(padPollTimer);
+
+    skyTargetX = 0;
+    skyTargetZ = 0;
+    skyCurX = 0;
+    skyCurZ = 0;
+    skyTargetH = defaultSkyHeight();
+    skyCurH = skyTargetH;
+    skyFlyStartCam.copy(savedCamPos);
+    skyFlyStartLook.copy(savedLookPos);
+    skyCurCam.copy(savedCamPos);
+    skyCurLook.copy(savedLookPos);
+    skyFlyT = 0;
+    skyFlyDur = SKY_FLY_DUR;
+
+    Input.consumeMap();
+    Input.consumeCancel();
+    Input.consumeInteract();
+    Input.consumePause();
+    skyClock.getDelta();
+
+    if (calmMotion) {
+      // Respect prefers-reduced-motion: instant cut instead of fly animation
+      skyCurLook.set(skyTargetX, 0, skyTargetZ);
+      skyCurCam.set(skyTargetX, skyTargetH, skyTargetZ + skyTargetH * SKY_PITCH_RATIO);
+      camera.position.copy(skyCurCam);
+      camera.lookAt(skyCurLook);
+      skyMesh.position.copy(camera.position);
+      if (scene.fog) scene.fog.density = savedFogDensity * 0.44;
+      skyLabelAlpha = 1;
+      setSkyMode('active');
+      updateSkyTrail(1, performance.now() * 0.001);
+      renderScene();
+      emitSkyProjection(1);
+      skyRafId = requestAnimationFrame(skyLoop);
+    } else {
+      skyLabelAlpha = 0;
+      setSkyMode('entering');
+      skyRafId = requestAnimationFrame(skyLoop);
+    }
+    return true;
+  }
+
+  function exitSkyView() {
+    if (disposed || skyMode === 'off' || skyMode === 'exiting') return false;
+    Input.consumeMap();
+    Input.consumeCancel();
+
+    if (calmMotion) {
+      finishExitSkyView();
+      return true;
+    }
+
+    const partialProgress = skyMode === 'entering' ? Math.min(1, skyFlyT / Math.max(0.01, skyFlyDur)) : 1;
+    skyFlyStartCam.copy(camera.position);
+    skyFlyStartLook.copy(skyCurLook);
+    skyFlyT = 0;
+    skyFlyDur = Math.max(0.3, SKY_FLY_DUR * partialProgress);
+    setSkyMode('exiting');
+    return true;
+  }
+
+  function panSkyViewByScreen(dx, dy) {
+    if (skyMode !== 'active') return;
+    const h = Math.max(320, container.clientHeight || window.innerHeight);
+    const vFovRad = THREE.MathUtils.degToRad(camera.fov || 48);
+    const worldPerPx = (2 * skyCurH * Math.tan(vFovRad * 0.5)) / h;
+    const next = clampSkyPan(
+      skyTargetX - dx * worldPerPx,
+      skyTargetZ - dy * worldPerPx * 1.15
+    );
+    skyTargetX = next.x;
+    skyTargetZ = next.z;
+  }
+
+  function zoomSkyViewByFactor(factor) {
+    if (skyMode !== 'active' || !Number.isFinite(factor)) return;
+    skyTargetH = THREE.MathUtils.clamp(skyTargetH * factor, SKY_MIN_H, SKY_MAX_H);
+  }
+
+  function zoomSkyViewStep(dir) {
+    if (skyMode !== 'active') return;
+    zoomSkyViewByFactor(dir > 0 ? 0.78 : 1.28);
   }
 
   let softPauseTimer = 0;
@@ -2573,11 +3022,11 @@ export function createWorld(container, hooks) {
     }, 150);
   }
   function resumeRendering() {
-    if (disposed || !worldPaused) return;
+    if (disposed || !worldPaused || skyMode !== 'off') return;
     worldPaused = false;
     clearInterval(padPollTimer);
     clock.getDelta();
-    Input.consumeInteract(); Input.consumePause();
+    Input.consumeInteract(); Input.consumePause(); Input.consumeMap(); Input.consumeCancel();
     restartMeasure();
     update(0, simTime);
     renderScene();
@@ -2587,7 +3036,9 @@ export function createWorld(container, hooks) {
   function dispose() {
     disposed = true;
     cancelAnimationFrame(rafId);
+    cancelAnimationFrame(skyRafId);
     clearTimeout(softPauseTimer);
+    clearTimeout(skySoftTimer);
     clearInterval(padPollTimer);
     document.removeEventListener('visibilitychange', restartMeasure);
     window.removeEventListener('keydown', onAnySkipKey);
@@ -2618,8 +3069,8 @@ export function createWorld(container, hooks) {
       inputEnabled = !!bool;
       if (inputEnabled && !introPlayed && !calmMotion) {
         introPlayed = true;
-        introActive = true;
         introT = 0;
+        setIntroActive(true);
       }
     },
     setCastleCrown(visible) { castleCrown.visible = !!visible; },
@@ -2633,6 +3084,13 @@ export function createWorld(container, hooks) {
     setGuideTarget,
     stepAwayFromNPC,
     getNearestUnvisited,
+    enterSkyView,
+    exitSkyView,
+    panSkyViewByScreen,
+    zoomSkyViewByFactor,
+    zoomSkyViewStep,
+    getSkyViewMode() { return skyMode; },
+    isIntroActive() { return introActive; },
     pause: pauseRendering,
     resume: resumeRendering,
     isPaused() { return worldPaused; },

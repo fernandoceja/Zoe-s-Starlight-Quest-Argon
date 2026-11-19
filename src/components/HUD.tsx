@@ -17,6 +17,8 @@ interface HUDProps {
   onToggleMute: () => void;
   onPause?: () => void;
   hidePauseButton?: boolean;
+  showSkyView?: boolean;
+  onOpenSkyView?: () => void;
   onInteract?: () => void;
   todayStarNPC?: PrincessId;
 }
@@ -35,6 +37,8 @@ export const HUD: React.FC<HUDProps> = ({
   onToggleMute,
   onPause,
   hidePauseButton = false,
+  showSkyView = false,
+  onOpenSkyView,
   onInteract,
 }) => {
   const nextPrincess = nextNPC ? PRINCESSES[nextNPC] : null;
@@ -119,7 +123,7 @@ export const HUD: React.FC<HUDProps> = ({
             </div>
           </div>
 
-          {/* Right: Sound & Pause Controls (aligned with global >=56px Pause button) */}
+          {/* Right: Sound, Sky View & Pause Controls */}
           <div className="flex items-center gap-2 pointer-events-auto shrink-0">
             <button
               type="button"
@@ -129,6 +133,22 @@ export const HUD: React.FC<HUDProps> = ({
             >
               {muted ? '🔇' : '🔊'}
             </button>
+            {showSkyView && onOpenSkyView && (
+              <button
+                type="button"
+                onClick={onOpenSkyView}
+                className="min-w-[64px] min-h-[60px] h-[60px] px-2.5 sm:px-4 rounded-full bg-white/95 hover:bg-amber-50 border-3 border-[#ebd373] shadow-lg ring-2 ring-purple-900/15 flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 text-purple-950 font-black whitespace-nowrap shrink-0 hover:scale-105 active:scale-95 transition-transform cursor-pointer"
+                aria-label="Open Sky View Map"
+                title="Sky View (M)"
+              >
+                <span className="text-xl sm:text-2xl leading-none" aria-hidden="true">
+                  🗺️
+                </span>
+                <span className="text-[11px] sm:text-sm leading-none tracking-tight">
+                  Sky View
+                </span>
+              </button>
+            )}
             {hidePauseButton ? (
               <div className="w-14 h-14 shrink-0 pointer-events-none" aria-hidden="true" />
             ) : (
