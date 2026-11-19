@@ -62,6 +62,19 @@ const NPC_DEFS = {
   aurora:     { land: 'glen',      dress: 0xa3315b, accent: 0xf6e3c8, hair: 0x5a2d3a, hairStyle: 'braid', skin: 0xdba57a, name: 'Aurora', tiara: false },
 };
 
+const PRINCESS_TRAIL_COLORS = {
+  belle:      { core: 0xffd75e, glow: 0xfff2b2 },
+  elsa:       { core: 0x82dcff, glow: 0xd9f5ff },
+  rapunzel:   { core: 0xffa8db, glow: 0xffe4f5 },
+  cinderella: { core: 0x9cd3ff, glow: 0xe3f4ff },
+  ariel:      { core: 0xffa285, glow: 0xffe2d4 },
+  moana:      { core: 0x62d9eb, glow: 0xcdf8ff },
+  jasmine:    { core: 0x6de3d6, glow: 0xd0fbf5 },
+  anna:       { core: 0xffa37c, glow: 0xffe5b0 },
+  tiana:      { core: 0xc99bff, glow: 0xffeaa6 },
+  aurora:     { core: 0xff99c8, glow: 0xffdced },
+};
+
 // ---------------------------------------------------------------------------
 // Small helpers
 // ---------------------------------------------------------------------------
@@ -1862,34 +1875,147 @@ export function createWorld(container, hooks) {
 
   let nearNPC = null;
 
-  // --- Gentle 3D Guidance Arrow & Prominent Destination Beacon (highlights Belle / next princess) ---
+  // --- Fairy-Dust Trail (7 instanced soft glowing sparkles + tiny floating fairy-butterfly) ---
   let guideTargetId = null;
-  const guideGroup = new THREE.Group();
-  const guideMat = new THREE.MeshStandardMaterial({
-    color: 0xffe04d,
-    emissive: 0xf59e0b,
-    emissiveIntensity: 1.05,
-    roughness: 0.22,
-    metalness: 0.3,
-  });
-  const guideArrow = new THREE.Mesh(new THREE.ConeGeometry(0.36, 0.88, 6), guideMat);
-  guideArrow.rotation.x = Math.PI / 2; // point along +Z
-  guideArrow.position.set(0, 0, 1.9);
-  guideArrow.raycast = () => {};
-  guideGroup.add(guideArrow);
+  const FAIRY_SPARKLE_COUNT = 7;
 
-  const guideDots = [];
-  const guideDotGeo = new THREE.SphereGeometry(0.13, 8, 6);
-  for (let i = 0; i < 3; i++) {
-    const dot = new THREE.Mesh(guideDotGeo, guideMat);
-    dot.position.set(0, 0, 2.65 + i * 0.68);
-    dot.scale.setScalar(1 - i * 0.2);
-    dot.raycast = () => {};
-    guideGroup.add(dot);
-    guideDots.push(dot);
+  function createFairySparkleTexture() {
+    const size = 64;
+    const c = document.createElement('canvas');
+    c.width = size;
+    c.height = size;
+    const ctx = c.getContext('2d');
+    const mid = size / 2;
+
+    // Soft pastel outer halo with zero hard edges
+    const halo = ctx.createRadialGradient(mid, mid, 0, mid, mid, mid - 2);
+    halo.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');
+    halo.addColorStop(0.24, 'rgba(255, 255, 255, 0.85)');
+    halo.addColorStop(0.55, 'rgba(255, 255, 255, 0.34)');
+    halo.addColorStop(0.82, 'rgba(255, 255, 255, 0.08)');
+    halo.addColorStop(1.0, 'rgba(255, 255, 255, 0.0)');
+    ctx.fillStyle = halo;
+    ctx.fillRect(0, 0, size, size);
+
+    // Delicate soft 4-point star gleam inside the halo
+    const drawRay = (angle, len, thick, alpha) => {
+      ctx.save();
+      ctx.translate(mid, mid);
+      ctx.rotate(angle);
+      const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, len);
+      grad.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
+      grad.addColorStop(0.5, `rgba(255, 255, 255, ${alpha * 0.45})`);
+      grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = grad;
+      ctx.scale(1, thick / len);
+      ctx.beginPath();
+      ctx.arc(0, 0, len, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    };
+    drawRay(0, 26, 5.5, 0.95);
+    drawRay(Math.PI / 2, 26, 5.5, 0.95);
+    drawRay(Math.PI / 4, 15, 4.0, 0.55);
+    drawRay(-Math.PI / 4, 15, 4.0, 0.55);
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+    return tex;
   }
-  guideGroup.visible = false;
-  scene.add(guideGroup);
+
+  const fairyTrailGroup = new THREE.Group();
+  const fairySparkleTex = createFairySparkleTexture();
+  const fairyDustGeo = new THREE.PlaneGeometry(1, 1);
+  const fairyDustMat = new THREE.MeshBasicMaterial({
+    map: fairySparkleTex,
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const fairyDustMesh = new THREE.InstancedMesh(fairyDustGeo, fairyDustMat, FAIRY_SPARKLE_COUNT);
+  fairyDustMesh.frustumCulled = false;
+  fairyDustMesh.renderOrder = 3;
+  fairyDustMesh.raycast = () => {};
+  const fairyDummy = new THREE.Object3D();
+  const fairyCoreCol = new THREE.Color(0xffd75e);
+  const fairyGlowCol = new THREE.Color(0xfff2b2);
+  const fairyInstCol = new THREE.Color();
+  for (let i = 0; i < FAIRY_SPARKLE_COUNT; i++) {
+    fairyDummy.scale.setScalar(0.001);
+    fairyDummy.updateMatrix();
+    fairyDustMesh.setMatrixAt(i, fairyDummy.matrix);
+    fairyDustMesh.setColorAt(i, fairyCoreCol);
+  }
+  fairyDustMesh.instanceMatrix.needsUpdate = true;
+  if (fairyDustMesh.instanceColor) fairyDustMesh.instanceColor.needsUpdate = true;
+  fairyTrailGroup.add(fairyDustMesh);
+
+  // Tiny floating fairy-butterfly leading the front of the trail
+  const fairyLead = new THREE.Group();
+  const fairyWingL = new THREE.Group();
+  const fairyWingR = new THREE.Group();
+  const fairyWingGeo = butterflyAssets && butterflyAssets.wingGeo
+    ? butterflyAssets.wingGeo.clone()
+    : (() => {
+        const g = new THREE.PlaneGeometry(0.32, 0.28);
+        g.rotateX(-Math.PI / 2);
+        g.translate(0.16, 0, 0);
+        return g;
+      })();
+  const fairyWingMat = butterflyAssets && butterflyAssets.wingMat
+    ? butterflyAssets.wingMat.clone()
+    : new THREE.MeshBasicMaterial({
+        map: softDot,
+        color: 0xffd75e,
+        transparent: true,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+  fairyWingMat.transparent = true;
+  fairyWingMat.depthWrite = false;
+  fairyWingMat.opacity = 0;
+
+  const fairyMeshL = new THREE.Mesh(fairyWingGeo, fairyWingMat);
+  const fairyMeshR = new THREE.Mesh(fairyWingGeo, fairyWingMat);
+  fairyMeshL.scale.x = -1;
+  fairyMeshL.raycast = fairyMeshR.raycast = () => {};
+  fairyMeshL.renderOrder = fairyMeshR.renderOrder = 4;
+  fairyWingL.add(fairyMeshL);
+  fairyWingR.add(fairyMeshR);
+
+  const fairyLeadGlowMat = new THREE.SpriteMaterial({
+    map: fairySparkleTex,
+    color: 0xfff2b2,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+  });
+  const fairyLeadGlow = new THREE.Sprite(fairyLeadGlowMat);
+  fairyLeadGlow.scale.setScalar(0.68);
+  fairyLeadGlow.renderOrder = 4;
+  fairyLeadGlow.raycast = () => {};
+
+  fairyLead.add(fairyWingL, fairyWingR, fairyLeadGlow);
+  fairyLead.scale.setScalar(1.2);
+  fairyTrailGroup.add(fairyLead);
+
+  fairyTrailGroup.visible = false;
+  scene.add(fairyTrailGroup);
+  let trailFade = 0;
+  let lastTrailThemeId = null;
+
+  function applyFairyTheme(npcId) {
+    if (npcId === lastTrailThemeId) return;
+    lastTrailThemeId = npcId;
+    const theme = (npcId && PRINCESS_TRAIL_COLORS[npcId]) || PRINCESS_TRAIL_COLORS.belle;
+    fairyCoreCol.setHex(theme.core);
+    fairyGlowCol.setHex(theme.glow);
+    fairyWingMat.color.copy(fairyCoreCol);
+    fairyLeadGlowMat.color.copy(fairyGlowCol);
+  }
 
   // Elevated golden beacon over the guided destination princess so she stands out across the kingdom
   const destBeacon = new THREE.Group();
@@ -2259,23 +2385,76 @@ export function createWorld(container, hooks) {
       if (!calmMotion) todayStar.rotation.y = t * 0.8;
     }
 
-    // ---- Gentle 3D Guidance Arrow & Prominent Destination Beacon ----
+    // ---- Fairy-Dust Trail & Prominent Destination Beacon ----
     const guideNpc = !focusNpc && !introActive && guideTargetId ? npcs[guideTargetId] : null;
+    const canShowFairyTrail = inputEnabled && !worldPaused && !!guideNpc;
     if (guideNpc) {
       const gx = guideNpc.group.position.x - playerPos.x;
       const gz = guideNpc.group.position.z - playerPos.z;
       const gd = Math.hypot(gx, gz);
-      if (gd > NPC_INTERACT_DIST + 1.2) {
-        guideGroup.visible = true;
-        const bob = calmMotion ? 0 : Math.sin(t * 3.0) * 0.1;
-        guideGroup.position.set(playerPos.x, groundY + 0.58 + bob, playerPos.z);
-        guideGroup.rotation.y = Math.atan2(gx, gz);
-        for (let i = 0; i < guideDots.length; i++) {
-          const pulse = calmMotion ? 0 : Math.sin(t * 4.2 - i * 0.9) * 0.08;
-          guideDots[i].position.y = pulse;
-        }
+
+      // Smooth fade-out within ~5 units of target, and completely hidden during dialogue/quests/celebrations/pause
+      const distAlpha = !canShowFairyTrail || gd <= 4.8 ? 0 : Math.min(1, (gd - 4.8) / 2.2);
+      if (!canShowFairyTrail) {
+        trailFade = 0;
       } else {
-        guideGroup.visible = false;
+        trailFade += (distAlpha - trailFade) * (calmMotion ? 1 : 1 - Math.exp(-6.5 * dt));
+      }
+
+      if (trailFade > 0.01 && gd > 0.01) {
+        applyFairyTheme(guideTargetId);
+        fairyTrailGroup.visible = true;
+
+        const dirX = gx / gd;
+        const dirZ = gz / gd;
+        const perpX = -dirZ;
+        const perpZ = dirX;
+        const trailStart = 1.2;
+        const trailLen = Math.min(6.2, Math.max(2.2, gd - 2.6));
+        const loopShift = calmMotion ? 0 : t * 0.26;
+
+        fairyDustMat.opacity = trailFade * 0.92;
+        for (let i = 0; i < FAIRY_SPARKLE_COUNT; i++) {
+          const u = ((i / FAIRY_SPARKLE_COUNT) + loopShift) % 1;
+          const dist = trailStart + u * trailLen;
+          const env = Math.sin(u * Math.PI);
+          const sway = Math.sin(u * Math.PI * 2 + i * 0.8 + (calmMotion ? 0 : t * 1.4)) * 0.26 * env;
+          const sx = playerPos.x + dirX * dist + perpX * sway;
+          const sz = playerPos.z + dirZ * dist + perpZ * sway;
+          const sy = Math.max(-0.2, walkHeightAt(sx, sz)) + 0.24 + (calmMotion ? 0 : Math.sin(t * 3.4 + i * 1.3) * 0.08);
+
+          const twinkle = calmMotion ? 0.92 : 0.76 + 0.24 * Math.sin(t * 5.8 + i * 2.1);
+          const sc = (0.34 + 0.44 * env) * twinkle;
+
+          fairyDummy.position.set(sx, sy, sz);
+          fairyDummy.quaternion.copy(camera.quaternion);
+          if (!calmMotion) fairyDummy.rotateZ(Math.sin(t * 1.6 + i) * 0.22);
+          fairyDummy.scale.setScalar(Math.max(0.001, sc));
+          fairyDummy.updateMatrix();
+          fairyDustMesh.setMatrixAt(i, fairyDummy.matrix);
+
+          fairyInstCol.copy(fairyCoreCol).lerp(fairyGlowCol, 0.3 + 0.55 * twinkle);
+          fairyDustMesh.setColorAt(i, fairyInstCol);
+        }
+        fairyDustMesh.instanceMatrix.needsUpdate = true;
+        if (fairyDustMesh.instanceColor) fairyDustMesh.instanceColor.needsUpdate = true;
+
+        // Tiny floating fairy-butterfly bobbing ahead toward the target princess
+        const leadDist = Math.min(Math.max(1.8, gd - 1.9), trailStart + trailLen + 0.55);
+        const leadSway = calmMotion ? 0 : Math.sin(t * 2.2) * 0.24;
+        const fx = playerPos.x + dirX * leadDist + perpX * leadSway;
+        const fz = playerPos.z + dirZ * leadDist + perpZ * leadSway;
+        const fy = Math.max(-0.2, walkHeightAt(fx, fz)) + 0.92 + (calmMotion ? 0 : Math.sin(t * 4.0) * 0.2);
+        fairyLead.position.set(fx, fy, fz);
+        fairyLead.rotation.y = Math.atan2(dirX, dirZ);
+        const wingAngle = calmMotion ? 0.45 : 0.24 + Math.sin(t * 14.0) * 0.72;
+        fairyWingL.rotation.z = wingAngle;
+        fairyWingR.rotation.z = -wingAngle;
+        fairyWingMat.opacity = trailFade * 0.92;
+        fairyLeadGlowMat.opacity = trailFade * (calmMotion ? 0.78 : 0.65 + 0.25 * Math.sin(t * 6.5));
+        fairyLeadGlow.scale.setScalar(0.62 + (calmMotion ? 0 : Math.sin(t * 6.5) * 0.1));
+      } else {
+        fairyTrailGroup.visible = false;
       }
 
       // Position destination beacon on the guided princess (stands out cleanly across hills/trees)
@@ -2293,7 +2472,8 @@ export function createWorld(container, hooks) {
         beaconBeamMat.opacity = 0.2;
       }
     } else {
-      guideGroup.visible = false;
+      trailFade = 0;
+      fairyTrailGroup.visible = false;
       destBeacon.visible = false;
     }
 
@@ -2382,6 +2562,9 @@ export function createWorld(container, hooks) {
   function pauseRendering() {
     if (disposed || worldPaused) return;
     worldPaused = true;
+    trailFade = 0;
+    fairyTrailGroup.visible = false;
+    renderScene();
     cancelAnimationFrame(rafId);
     clearTimeout(softPauseTimer);
     padPollTimer = setInterval(() => {
