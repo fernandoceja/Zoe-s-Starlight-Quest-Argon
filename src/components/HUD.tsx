@@ -15,7 +15,8 @@ interface HUDProps {
   nextNPC?: PrincessId | null;
   muted: boolean;
   onToggleMute: () => void;
-  onPause: () => void;
+  onPause?: () => void;
+  hidePauseButton?: boolean;
   onInteract?: () => void;
   todayStarNPC?: PrincessId;
 }
@@ -33,6 +34,7 @@ export const HUD: React.FC<HUDProps> = ({
   muted,
   onToggleMute,
   onPause,
+  hidePauseButton = false,
   onInteract,
 }) => {
   const nextPrincess = nextNPC ? PRINCESSES[nextNPC] : null;
@@ -117,24 +119,28 @@ export const HUD: React.FC<HUDProps> = ({
             </div>
           </div>
 
-          {/* Right: Sound & Pause Controls */}
+          {/* Right: Sound & Pause Controls (aligned with global >=56px Pause button) */}
           <div className="flex items-center gap-2 pointer-events-auto shrink-0">
             <button
               type="button"
               onClick={onToggleMute}
-              className="min-w-[44px] min-h-[44px] sm:w-11 sm:h-11 rounded-full bg-white/95 border-2 border-[#ebd373] shadow-md flex items-center justify-center text-lg sm:text-xl hover:scale-105 active:scale-95 transition-transform"
+              className="min-w-[52px] min-h-[52px] w-[52px] h-[52px] rounded-full bg-white/95 border-2 border-[#ebd373] shadow-md flex items-center justify-center text-xl hover:scale-105 active:scale-95 transition-transform cursor-pointer"
               aria-label={muted ? 'Unmute Sound' : 'Mute Sound'}
             >
               {muted ? '🔇' : '🔊'}
             </button>
-            <button
-              type="button"
-              onClick={onPause}
-              className="min-w-[44px] min-h-[44px] sm:w-11 sm:h-11 rounded-full bg-white/95 border-2 border-[#ebd373] shadow-md flex items-center justify-center text-lg sm:text-xl hover:scale-105 active:scale-95 transition-transform font-black text-purple-900"
-              aria-label="Pause Menu"
-            >
-              ⏸️
-            </button>
+            {hidePauseButton ? (
+              <div className="w-14 h-14 shrink-0 pointer-events-none" aria-hidden="true" />
+            ) : (
+              <button
+                type="button"
+                onClick={onPause}
+                className="min-w-[56px] min-h-[56px] w-14 h-14 rounded-full bg-white/95 border-2 border-[#ebd373] shadow-md flex items-center justify-center text-2xl hover:scale-105 active:scale-95 transition-transform font-black text-purple-900 cursor-pointer"
+                aria-label="Pause Menu"
+              >
+                ⏸️
+              </button>
+            )}
           </div>
         </div>
 
@@ -159,13 +165,13 @@ export const HUD: React.FC<HUDProps> = ({
         )}
       </header>
 
-      {/* Proximity Interaction Button (Bottom Center — Stationary, Large >= 56px Touch Target) */}
+      {/* Proximity Interaction Button (Bottom Center — High-Visibility Stationary >= 60px Touch Target) */}
       {interactPrompt && (
         <div className="fixed bottom-20 sm:bottom-10 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
           <button
             type="button"
             onClick={onInteract}
-            className="min-w-[56px] min-h-[56px] bg-gradient-to-r from-amber-400 to-yellow-300 hover:brightness-105 text-amber-950 font-black px-6 py-3.5 rounded-full border-4 border-white shadow-xl ring-4 ring-amber-300/60 text-lg sm:text-xl flex items-center justify-center gap-2 active:scale-95 transition-transform cursor-pointer"
+            className="min-w-[220px] min-h-[60px] bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-400 hover:brightness-105 text-amber-950 font-black px-7 py-4 rounded-full border-4 border-white shadow-2xl ring-4 ring-purple-900/25 text-xl sm:text-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform cursor-pointer"
           >
             <span>{interactPrompt}</span>
           </button>

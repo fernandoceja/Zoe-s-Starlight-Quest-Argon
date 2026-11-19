@@ -1117,6 +1117,21 @@ export function createWorld(container, hooks) {
   scene.add(player);
   const playerShadow = addShadow(SHADOW_R);
   playerShadow.position.set(0, startY + 0.045, 4);
+  const playerRing = new THREE.Mesh(
+    new THREE.RingGeometry(0.86, 1.04, 28),
+    new THREE.MeshBasicMaterial({
+      color: 0xff77b7,
+      transparent: true,
+      opacity: 0.62,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    })
+  );
+  playerRing.rotation.x = -Math.PI / 2;
+  playerRing.position.set(0, startY + 0.055, 4);
+  playerRing.renderOrder = 2;
+  playerRing.raycast = () => {};
+  scene.add(playerRing);
   const playerVel = new THREE.Vector3();
   const playerPos = player.position;
   let playerAngle = 0;
@@ -1847,28 +1862,28 @@ export function createWorld(container, hooks) {
 
   let nearNPC = null;
 
-  // --- Gentle 3D Guidance Arrow & Sparkle Dots (points toward nearest unvisited princess) ---
+  // --- Gentle 3D Guidance Arrow & Prominent Destination Beacon (highlights Belle / next princess) ---
   let guideTargetId = null;
   const guideGroup = new THREE.Group();
   const guideMat = new THREE.MeshStandardMaterial({
-    color: 0xffd84d,
+    color: 0xffe04d,
     emissive: 0xf59e0b,
-    emissiveIntensity: 0.7,
-    roughness: 0.25,
-    metalness: 0.35,
+    emissiveIntensity: 1.05,
+    roughness: 0.22,
+    metalness: 0.3,
   });
-  const guideArrow = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.72, 6), guideMat);
+  const guideArrow = new THREE.Mesh(new THREE.ConeGeometry(0.36, 0.88, 6), guideMat);
   guideArrow.rotation.x = Math.PI / 2; // point along +Z
-  guideArrow.position.set(0, 0, 1.85);
+  guideArrow.position.set(0, 0, 1.9);
   guideArrow.raycast = () => {};
   guideGroup.add(guideArrow);
 
   const guideDots = [];
-  const guideDotGeo = new THREE.SphereGeometry(0.11, 8, 6);
+  const guideDotGeo = new THREE.SphereGeometry(0.13, 8, 6);
   for (let i = 0; i < 3; i++) {
     const dot = new THREE.Mesh(guideDotGeo, guideMat);
-    dot.position.set(0, 0, 2.55 + i * 0.65);
-    dot.scale.setScalar(1 - i * 0.22);
+    dot.position.set(0, 0, 2.65 + i * 0.68);
+    dot.scale.setScalar(1 - i * 0.2);
     dot.raycast = () => {};
     guideGroup.add(dot);
     guideDots.push(dot);
@@ -1876,8 +1891,139 @@ export function createWorld(container, hooks) {
   guideGroup.visible = false;
   scene.add(guideGroup);
 
+  // Elevated golden beacon over the guided destination princess so she stands out across the kingdom
+  const destBeacon = new THREE.Group();
+  const beaconBeamMat = new THREE.MeshBasicMaterial({
+    color: 0xffe066,
+    transparent: true,
+    opacity: 0.22,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const beaconBeam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.82, 1.35, 11.5, 16, 1, true),
+    beaconBeamMat
+  );
+  beaconBeam.position.y = 5.75;
+  beaconBeam.raycast = () => {};
+  destBeacon.add(beaconBeam);
+
+  const beaconRingMat = new THREE.MeshBasicMaterial({
+    color: 0xffd43b,
+    transparent: true,
+    opacity: 0.88,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const beaconInnerRing = new THREE.Mesh(new THREE.RingGeometry(1.48, 1.88, 32), beaconRingMat);
+  beaconInnerRing.rotation.x = -Math.PI / 2;
+  beaconInnerRing.position.y = 0.08;
+  beaconInnerRing.renderOrder = 2;
+  beaconInnerRing.raycast = () => {};
+  destBeacon.add(beaconInnerRing);
+
+  const beaconOuterRingMat = new THREE.MeshBasicMaterial({
+    color: 0xfff3a8,
+    transparent: true,
+    opacity: 0.65,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const beaconOuterRing = new THREE.Mesh(new THREE.RingGeometry(2.12, 2.38, 32), beaconOuterRingMat);
+  beaconOuterRing.rotation.x = -Math.PI / 2;
+  beaconOuterRing.position.y = 0.075;
+  beaconOuterRing.renderOrder = 2;
+  beaconOuterRing.raycast = () => {};
+  destBeacon.add(beaconOuterRing);
+
+  const beaconCrest = new THREE.Mesh(
+    starGeometry(0.96, 0.42),
+    new THREE.MeshStandardMaterial({
+      color: 0xfff3a8,
+      emissive: 0xffb800,
+      emissiveIntensity: 1.5,
+      roughness: 0.2,
+      metalness: 0.25,
+      side: THREE.DoubleSide,
+    })
+  );
+  beaconCrest.position.y = 7.4;
+  beaconCrest.raycast = () => {};
+  destBeacon.add(beaconCrest);
+
+  destBeacon.visible = false;
+  scene.add(destBeacon);
+
   function setGuideTarget(npcId) {
     guideTargetId = npcId && npcs[npcId] ? npcId : null;
+  }
+
+  function stepAwayFromNPC(npcId) {
+    const npc = npcId && npcs[npcId] ? npcs[npcId] : null;
+    if (!npc) {
+      Input.clearInteract(500);
+      return;
+    }
+    const gx = npc.group.position.x;
+    const gz = npc.group.position.z;
+    let dx = playerPos.x - gx;
+    let dz = playerPos.z - gz;
+    let d = Math.hypot(dx, dz);
+    if (d < 0.25) {
+      dx = -gx;
+      dz = -gz;
+      d = Math.hypot(dx, dz) || 1;
+    }
+    const baseAngle = Math.atan2(dz, dx);
+    const stepDist = NPC_INTERACT_DIST + 1.35;
+    const offsets = [0, 0.45, -0.45, 0.9, -0.9, 1.45, -1.45, Math.PI];
+
+    const spotClear = (cx, cz) => {
+      if (Math.hypot(cx, cz) > WORLD_RADIUS - 1) return false;
+      for (const col of colliders) {
+        if (Math.hypot(cx - col.x, cz - col.z) < col.r + 0.65) return false;
+      }
+      for (const other of Object.values(npcs)) {
+        if (Math.hypot(cx - other.group.position.x, cz - other.group.position.z) < NPC_INTERACT_DIST + 0.4) {
+          return false;
+        }
+      }
+      return true;
+    };
+
+    let targetX = gx + Math.cos(baseAngle) * stepDist;
+    let targetZ = gz + Math.sin(baseAngle) * stepDist;
+    for (const off of offsets) {
+      const a = baseAngle + off;
+      const cx = gx + Math.cos(a) * stepDist;
+      const cz = gz + Math.sin(a) * stepDist;
+      if (spotClear(cx, cz)) {
+        targetX = cx;
+        targetZ = cz;
+        break;
+      }
+    }
+
+    const r = Math.hypot(targetX, targetZ);
+    if (r > WORLD_RADIUS - 0.5) {
+      targetX *= (WORLD_RADIUS - 0.5) / r;
+      targetZ *= (WORLD_RADIUS - 0.5) / r;
+    }
+
+    const gy = Math.max(-0.26, walkHeightAt(targetX, targetZ));
+    playerPos.set(targetX, gy, targetZ);
+    playerVel.set(0, 0, 0);
+    playerAngle = Math.atan2(targetX - gx, targetZ - gz);
+    player.rotation.y = playerAngle;
+    playerShadow.position.set(targetX, gy + 0.045, targetZ);
+    playerRing.position.set(targetX, gy + 0.055, targetZ);
+
+    if (nearNPC !== null) {
+      nearNPC = null;
+      onNearNPC(null);
+    }
+    Input.clearInteract(550);
   }
 
   function getNearestUnvisited(doneIds) {
@@ -1991,6 +2137,7 @@ export function createWorld(container, hooks) {
     player.rotation.y += angleDelta(player.rotation.y, playerAngle) * (1 - Math.exp(-12 * dt));
     playerPos.y = groundY + (speed > 0.6 ? Math.abs(Math.sin(walkPhase)) * 0.09 : 0);
     playerShadow.position.set(playerPos.x, groundY + 0.045, playerPos.z);
+    playerRing.position.set(playerPos.x, groundY + 0.055, playerPos.z);
     sparkleTrail(dt, speed);
     buddyUpdate(dt, t);
 
@@ -2018,7 +2165,7 @@ export function createWorld(container, hooks) {
       const mNear = activeNear ? nearMid : lastNearMid;
       desiredLook.lerp(mNear, eNear * 0.75);
       nearCamTmp.set(
-        mNear.x + camOffset.x + lastNearSide * 2.8,
+        mNear.x + camOffset.x + lastNearSide * 3.3,
         groundY + camOffset.y * 0.96,
         mNear.z + camOffset.z * 0.94
       );
@@ -2112,7 +2259,7 @@ export function createWorld(container, hooks) {
       if (!calmMotion) todayStar.rotation.y = t * 0.8;
     }
 
-    // ---- Gentle 3D Guidance Arrow toward next unvisited princess ----
+    // ---- Gentle 3D Guidance Arrow & Prominent Destination Beacon ----
     const guideNpc = !focusNpc && !introActive && guideTargetId ? npcs[guideTargetId] : null;
     if (guideNpc) {
       const gx = guideNpc.group.position.x - playerPos.x;
@@ -2121,7 +2268,7 @@ export function createWorld(container, hooks) {
       if (gd > NPC_INTERACT_DIST + 1.2) {
         guideGroup.visible = true;
         const bob = calmMotion ? 0 : Math.sin(t * 3.0) * 0.1;
-        guideGroup.position.set(playerPos.x, groundY + 0.55 + bob, playerPos.z);
+        guideGroup.position.set(playerPos.x, groundY + 0.58 + bob, playerPos.z);
         guideGroup.rotation.y = Math.atan2(gx, gz);
         for (let i = 0; i < guideDots.length; i++) {
           const pulse = calmMotion ? 0 : Math.sin(t * 4.2 - i * 0.9) * 0.08;
@@ -2130,8 +2277,24 @@ export function createWorld(container, hooks) {
       } else {
         guideGroup.visible = false;
       }
+
+      // Position destination beacon on the guided princess (stands out cleanly across hills/trees)
+      destBeacon.visible = true;
+      destBeacon.position.set(guideNpc.group.position.x, guideNpc.baseY, guideNpc.group.position.z);
+      const crestBob = calmMotion ? 0 : Math.sin(t * 2.4) * 0.35;
+      beaconCrest.position.y = 7.4 + crestBob;
+      if (!calmMotion) {
+        beaconCrest.rotation.y = t * 1.1;
+        const ringBreath = 1 + Math.sin(t * 2.6) * 0.06;
+        beaconOuterRing.scale.setScalar(ringBreath);
+        beaconBeamMat.opacity = 0.18 + Math.sin(t * 2.0) * 0.05;
+      } else {
+        beaconOuterRing.scale.setScalar(1);
+        beaconBeamMat.opacity = 0.2;
+      }
     } else {
       guideGroup.visible = false;
+      destBeacon.visible = false;
     }
 
     if (snowPoints) {
@@ -2221,7 +2384,10 @@ export function createWorld(container, hooks) {
     worldPaused = true;
     cancelAnimationFrame(rafId);
     clearTimeout(softPauseTimer);
-    padPollTimer = setInterval(() => Input.poll(), 250);
+    padPollTimer = setInterval(() => {
+      Input.poll();
+      if (Input.consumePause()) onPauseRequest();
+    }, 150);
   }
   function resumeRendering() {
     if (disposed || !worldPaused) return;
@@ -2282,6 +2448,7 @@ export function createWorld(container, hooks) {
     setTodayStar,
     setClockTime,
     setGuideTarget,
+    stepAwayFromNPC,
     getNearestUnvisited,
     pause: pauseRendering,
     resume: resumeRendering,

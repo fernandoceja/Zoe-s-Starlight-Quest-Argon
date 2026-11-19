@@ -999,7 +999,7 @@ export const UI = {
       }
       card.appendChild(row);
       show(wrap);
-      Narrator.speakText(s.title + '. ' + s.text, { pitch: 1.2, rate: 0.85 });
+      Narrator.speakText(s.title + '. ' + s.text);
     };
 
     render(0);
@@ -1085,7 +1085,7 @@ export const UI = {
     card.appendChild(crow);
     wrap.appendChild(card);
     show(wrap);
-    Narrator.speakText('Treasure Book. ' + line, { pitch: 1.2, rate: 0.85 });
+    Narrator.speakText('Treasure Book. ' + line);
   },
 
   /** Wardrobe card (inside the pause overlay): wear unlocked star rewards. onOutfit(outfit) applies + saves. */
@@ -1704,7 +1704,7 @@ export const UI = {
     }
     const first = arr[0];
     const firstText = (typeof first === 'string') ? first : (first && first.text) || '';
-    if (firstText) Narrator.speakText(firstText, { pitch: 1.2, rate: 0.92 });
+    if (firstText) Narrator.speakText(firstText);
     const btn = el('button', 'zsq-bigbtn', 'Play Again 💫');
     btn.style.marginTop = '18px';
     btn.onclick = () => {

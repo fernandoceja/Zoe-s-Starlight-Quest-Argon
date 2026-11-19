@@ -28,7 +28,7 @@ export const PRINCESSES = {
     landName: 'Whispering Library',
     portrait: PORTRAIT_BELLE,
     color: '#3b82f6',
-    voice: { pitch: 1.1, rate: 0.95 },
+    voice: { pitch: 1.10, rate: 0.89 },
   },
   elsa: {
     name: 'Elsa',
@@ -36,7 +36,7 @@ export const PRINCESSES = {
     landName: 'Frostfall Peaks',
     portrait: PORTRAIT_ELSA,
     color: '#38bdf8',
-    voice: { pitch: 1.15, rate: 0.9 },
+    voice: { pitch: 1.14, rate: 0.87 },
   },
   rapunzel: {
     name: 'Rapunzel',
@@ -44,7 +44,7 @@ export const PRINCESSES = {
     landName: 'Sunflower Meadows',
     portrait: PORTRAIT_RAPUNZEL,
     color: '#34c779',
-    voice: { pitch: 1.25, rate: 1.0 },
+    voice: { pitch: 1.26, rate: 0.94 },
   },
   cinderella: {
     name: 'Cinderella',
@@ -52,7 +52,7 @@ export const PRINCESSES = {
     landName: 'Glass Slipper Village',
     portrait: PORTRAIT_CINDERELLA,
     color: '#f59e0b',
-    voice: { pitch: 1.05, rate: 0.9 },
+    voice: { pitch: 1.12, rate: 0.88 },
   },
   // --- New-kingdom princesses (K3). Ariel (K5), Moana (K7), Jasmine (K9), Anna (K11) and Tiana (K13) are in NPC_ORDER now; the rest are NOT yet: each kingdom PR
   // appends her id to NPC_ORDER (and BUILT_SLOTS) when her land exists. Original art, no recorded
@@ -63,7 +63,7 @@ export const PRINCESSES = {
     landName: 'Seashell Cove',
     portrait: PORTRAIT_ARIEL,
     color: '#14b8a6',
-    voice: { pitch: 1.2, rate: 0.92 },
+    voice: { pitch: 1.24, rate: 0.93 },
   },
   moana: {
     name: 'Moana',
@@ -71,7 +71,7 @@ export const PRINCESSES = {
     landName: 'Wayfinder Isle',
     portrait: PORTRAIT_MOANA,
     color: '#d4a373',
-    voice: { pitch: 1.0, rate: 0.96 },
+    voice: { pitch: 1.16, rate: 0.92 },
   },
   jasmine: {
     name: 'Jasmine',
@@ -79,7 +79,7 @@ export const PRINCESSES = {
     landName: 'Moonlit Palace Garden',
     portrait: PORTRAIT_JASMINE,
     color: '#4f46e5',
-    voice: { pitch: 1.08, rate: 0.86 },
+    voice: { pitch: 1.08, rate: 0.88 },
   },
   anna: {
     name: 'Anna',
@@ -87,7 +87,7 @@ export const PRINCESSES = {
     landName: 'Sunny Fjord Harbor',
     portrait: PORTRAIT_ANNA,
     color: '#ef4444',
-    voice: { pitch: 1.18, rate: 1.0 },
+    voice: { pitch: 1.22, rate: 0.95 },
   },
   tiana: {
     name: 'Tiana',
@@ -95,7 +95,7 @@ export const PRINCESSES = {
     landName: 'Firefly Bayou',
     portrait: PORTRAIT_TIANA,
     color: '#9333ea',
-    voice: { pitch: 1.02, rate: 0.88 },
+    voice: { pitch: 1.07, rate: 0.90 },
   },
   aurora: {
     name: 'Aurora',
@@ -103,7 +103,7 @@ export const PRINCESSES = {
     landName: 'Rosewood Glen',
     portrait: PORTRAIT_AURORA,
     color: '#be185d',
-    voice: { pitch: 1.28, rate: 0.87 },
+    voice: { pitch: 1.28, rate: 0.85 },
   },
   zoe: {
     name: 'Zoe',
@@ -111,7 +111,7 @@ export const PRINCESSES = {
     landName: 'Starlight Hub',
     portrait: PORTRAIT_ZOE,
     color: '#fbbf24',
-    voice: { pitch: 1.3, rate: 1.0 },
+    voice: { pitch: 1.29, rate: 0.93 },
   },
 };
 
@@ -159,7 +159,7 @@ export const QUESTS = {
         prompt: "Which word says 'again'?",
         choices: ['again', 'open', 'fly'],
         answer: 'again',
-        hint: "Good try! Let's look again. Which word starts with the letter a?",
+        hint: "Good try! Which word starts with the letter a?",
       },
       {
         prompt: 'Sound it out: c - a - t. Which word is it?',
@@ -171,7 +171,7 @@ export const QUESTS = {
         prompt: "Which word says 'some'?",
         choices: ['same', 'some', 'stop'],
         answer: 'some',
-        hint: 'Good try! These look close. Which word has an o right after the s?',
+        hint: 'Good try! Which word has an o right after the s?',
       },
       {
         prompt: 'Sound it out: p - i - g. Which word is it?',
@@ -183,7 +183,7 @@ export const QUESTS = {
         prompt: "Which word says 'every'?",
         choices: ['every', 'ever', 'even'],
         answer: 'every',
-        hint: 'Good try! Look at the end. Which word ends with y?',
+        hint: 'Good try! Which word ends with y?',
       },
     ],
     complete: [
@@ -759,18 +759,18 @@ function _hintPos(w, distractors) {
   return -1;
 }
 
-// Belle hint: point at a letter the right word has that NO wrong choice shares
-// in the same spot (first letter, then last letter, then any position).
+// Belle hint: one short encouragement, then point directly at a letter the
+// right word has that NO wrong choice shares in the same spot.
 export function _belleHint(w, distractors) {
   const i = _hintPos(w, distractors);
   const last = w[w.length - 1];
-  if (i === 0) return `Good try! Let's look again. '${w}' starts with the letter ${w[0]}.`;
-  if (i === w.length - 1) return `Good try! Let's look again. '${w}' ends with the letter ${last}.`;
+  if (i === 0) return `Good try! '${w}' starts with the letter ${w[0]}.`;
+  if (i === w.length - 1) return `Good try! '${w}' ends with the letter ${last}.`;
   const ord = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh'];
-  if (i > 0) return `Good try! Let's look again. The ${ord[i] || 'next'} letter in '${w}' is ${w[i]}.`;
+  if (i > 0) return `Good try! The ${ord[i] || 'next'} letter in '${w}' is ${w[i]}.`;
   const lens = distractors.every((d) => d.length !== w.length);
-  if (lens) return `Good try! Let's look again. '${w}' has ${w.length} letters.`;
-  return `Good try! Let's look again. Spell it with me: ${w.split('').join(' - ')}.`;
+  if (lens) return `Good try! '${w}' has ${w.length} letters.`;
+  return `Good try! Spell it with me: ${w.split('').join(' - ')}.`;
 }
 
 // Belle's recorded phonics clips (repo-root assets/audio/EN/curriculum/belle/).
@@ -1308,7 +1308,7 @@ function _dictRound(tier, rng) {
     prompt: tier === 2 ? 'Listen and build the sentence.' : 'Listen. Build the sentence with a capital and an end mark.',
     say: `Listen. ${spoken} ${tier === 2 ? 'Tap the words to build the sentence.' : 'Tap the words to build it. Start with a capital letter and finish with the right end mark.'}`,
     replay: spoken,
-    hint: 'Good try! Listen again. Which word comes next?',
+    hint: 'Good try! Listen closely for which word comes next.',
     hintSay: more,
     build: tier === 2
       ? { tiles, target, end, sentence: true }

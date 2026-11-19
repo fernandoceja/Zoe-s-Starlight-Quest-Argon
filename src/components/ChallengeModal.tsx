@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import {
   PRINCESSES,
@@ -8,6 +8,11 @@ import {
   getEscalatingHint,
   revealLines,
 } from '../game/quests.js';
+import {
+  shouldShowChoiceAudio,
+  spokenChoiceText,
+  getChoiceGridConfig,
+} from '../game/choiceLayout.js';
 import { shapeSVG } from '../game/shapes.js';
 import { tallyCardHtml } from '../game/tally.js';
 import { Narrator, SoundFX } from '../game/audio.js';
@@ -20,8 +25,10 @@ interface ChallengeModalProps {
   totalRounds: number;
   baseTotal?: number;
   completedBaseCount?: number;
+  paused?: boolean;
   onCorrect: () => void;
   onMiss: (missCount: number) => void;
+  onLeave?: () => void;
 }
 
 const FLOWER_HEX: Record<string, { bg: string; label: string }> = {
@@ -37,8 +44,10 @@ export const ChallengeModal: React.FC<ChallengeModalProps> = ({
   roundIdx,
   baseTotal = 5,
   completedBaseCount = 0,
+  paused = false,
   onCorrect,
   onMiss,
+  onLeave,
 }) => {
   const princess = PRINCESSES[npcId];
   const quest = QUESTS[npcId];
@@ -65,6 +74,56 @@ export const ChallengeModal: React.FC<ChallengeModalProps> = ({
   const [sortedItems, setSortedItems] = useState<
     { name: string; pic?: string; naming?: boolean; living?: boolean; bin?: string }[]
   >([]);
+
+  // Scroll ref for middle content body (so Question+Speaker and Hint stay pinned together)
+  const bodyScrollRef = useRef<HTMLDivElement>(null);
+  const [bodyScrolled, setBodyScrolled] = useState(false);
+
+  // Pause-safe advance timer refs so pausing freezes round progression cleanly
+  const advanceTimerRef = useRef<number | null>(null);
+  const pendingAdvanceRef = useRef(false);
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
+  const onCorrectRef = useRef(onCorrect);
+  onCorrectRef.current = onCorrect;
+
+  const clearAdvanceTimer = useCallback(() => {
+    if (advanceTimerRef.current != null) {
+      window.clearTimeout(advanceTimerRef.current);
+      advanceTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleAdvance = useCallback(
+    (delayMs: number) => {
+      clearAdvanceTimer();
+      pendingAdvanceRef.current = true;
+      if (pausedRef.current) return;
+      advanceTimerRef.current = window.setTimeout(() => {
+        advanceTimerRef.current = null;
+        if (pausedRef.current) return;
+        pendingAdvanceRef.current = false;
+        onCorrectRef.current();
+      }, delayMs);
+    },
+    [clearAdvanceTimer]
+  );
+
+  // Freeze pending advance when paused, and gently finish when resumed
+  useEffect(() => {
+    if (paused) {
+      clearAdvanceTimer();
+    } else if (pendingAdvanceRef.current && advanceTimerRef.current == null) {
+      advanceTimerRef.current = window.setTimeout(() => {
+        advanceTimerRef.current = null;
+        if (pausedRef.current) return;
+        pendingAdvanceRef.current = false;
+        onCorrectRef.current();
+      }, 650);
+    }
+  }, [paused, clearAdvanceTimer]);
+
+  useEffect(() => clearAdvanceTimer, [clearAdvanceTimer]);
 
   const speakQuestion = useCallback(() => {
     let text = round.replay || round.say || round.prompt;
@@ -99,6 +158,8 @@ export const ChallengeModal: React.FC<ChallengeModalProps> = ({
 
   // Setup choices on new round
   useEffect(() => {
+    clearAdvanceTimer();
+    pendingAdvanceRef.current = false;
     setMisses(0);
     setFeedback({ type: null, message: '' });
     setSelectedChoice(null);
@@ -107,6 +168,10 @@ export const ChallengeModal: React.FC<ChallengeModalProps> = ({
     setDisabled(false);
     setPlacedTiles([]);
     setTileWrongs(0);
+    setBodyScrolled(false);
+    if (bodyScrollRef.current) {
+      bodyScrollRef.current.scrollTop = 0;
+    }
 
     if (round.sort?.items) {
       setSortedItems(round.sort.items.map((it: any) => ({ ...it, bin: undefined })));
@@ -161,14 +226,12 @@ export const ChallengeModal: React.FC<ChallengeModalProps> = ({
     setFeedback({ type: 'correct', message: `⭐ +1 star! ${praise}` });
     Narrator.speakExact(npcId, praise);
 
-    setTimeout(() => {
-      onCorrect();
-    }, 1500);
+    scheduleAdvance(1500);
   };
 
   // Choice button pick
   const handleChoice = (choice: string) => {
-    if (disabled || dimmedChoices.includes(choice)) return;
+    if (paused || disabled || dimmedChoices.includes(choice)) return;
     setSelectedChoice(choice);
 
     if (choice === round.answer) {
@@ -186,10 +249,8 @@ export const ChallengeModal: React.FC<ChallengeModalProps> = ({
       setDisabled(true);
       const rev = revealLines(round);
       setFeedback({ type: 'reveal', message: rev.shown });
-      Narrator.speakExact(npcId, rev.say);
-      setTimeout(() => {
-        onCorrect();
-      }, 2100);
+      Narrator.speakHint(rev.say);
+      scheduleAdvance(2100);
       return;
     }
 
@@ -214,13 +275,12 @@ export const ChallengeModal: React.FC<ChallengeModalProps> = ({
           ? "Let's try the other one! 💛"
           : hintInfo.text;
       setFeedback({ type: 'wrong', message: msg });
-      Narrator.speakExact(npcId, msg);
+      Narrator.speakHint(msg);
       return;
     }
 
     setFeedback({ type: 'wrong', message: hintInfo.text });
-    Narrator.speakExact(
-      npcId,
+    Narrator.speakHint(
       hintInfo.say,
       nextMisses === 1 && round.sound
         ? () => Narrator.playClip(BELLE_CLIP_DIR + round.sound)
@@ -310,10 +370,10 @@ export const ChallengeModal: React.FC<ChallengeModalProps> = ({
       const my = 50 - 25 * Math.cos(mr);
 
       return (
-        <div className="my-2 flex justify-center">
+        <div className="my-1.5 flex justify-center">
           <svg
             viewBox="0 0 100 100"
-            className={`w-32 h-32 sm:w-36 sm:h-36 drop-shadow-md rounded-full ${
+            className={`w-28 h-28 sm:w-32 sm:h-32 drop-shadow-md rounded-full ${
               highlightClue ? 'ring-4 ring-amber-400' : ''
             }`}
             role="img"
@@ -566,14 +626,14 @@ export const ChallengeModal: React.FC<ChallengeModalProps> = ({
       const heights: number[] = round.visual.heights || [3, 5, 2];
       const colorKeys: string[] = round.visual.colors || ['pink', 'yellow', 'purple'];
       return (
-        <div className="my-2 flex items-end justify-center gap-6 sm:gap-9 h-36 border-b-4 border-emerald-400 pb-1">
+        <div className="my-1.5 flex items-end justify-center gap-6 sm:gap-9 h-28 sm:h-32 border-b-4 border-emerald-400 pb-1">
           {heights.map((h, i) => {
             const key = colorKeys[i] || 'pink';
             const cfg = FLOWER_HEX[key] || FLOWER_HEX.pink;
             return (
               <div key={i} className="flex flex-col items-center">
                 <div
-                  className="w-9 h-9 rounded-full border-2 border-white shadow-sm flex items-center justify-center text-base"
+                  className="w-8 h-8 rounded-full border-2 border-white shadow-sm flex items-center justify-center text-sm"
                   style={{ backgroundColor: cfg.bg }}
                   aria-label={`${cfg.label} flower, height ${h}`}
                 >
@@ -581,7 +641,7 @@ export const ChallengeModal: React.FC<ChallengeModalProps> = ({
                 </div>
                 <div
                   className="w-3 bg-emerald-600 rounded-t-xs"
-                  style={{ height: `${h * 11}px` }}
+                  style={{ height: `${h * 9}px` }}
                 />
                 <span className="text-xs font-black text-slate-800 mt-0.5">
                   {cfg.label}
@@ -721,7 +781,7 @@ export const ChallengeModal: React.FC<ChallengeModalProps> = ({
           msg = `Look closely! The next tile is "${nextExpected}". Tap it to keep going! 💛`;
         }
         setFeedback({ type: 'wrong', message: msg });
-        Narrator.speakExact(npcId, msg);
+        Narrator.speakHint(msg);
       }
     };
 
@@ -836,7 +896,7 @@ export const ChallengeModal: React.FC<ChallengeModalProps> = ({
         onMiss(nextWrong);
         const hintInfo = getEscalatingHint(round, nextWrong);
         setFeedback({ type: 'wrong', message: hintInfo.text });
-        Narrator.speakExact(npcId, hintInfo.say);
+        Narrator.speakHint(hintInfo.say);
       }
     };
 
@@ -883,128 +943,213 @@ export const ChallengeModal: React.FC<ChallengeModalProps> = ({
     ? Math.min(baseTotal - 1, completedBaseCount)
     : Math.min(baseTotal - 1, roundIdx);
 
+  const showChoiceAudio = shouldShowChoiceAudio(npcId, round);
+  const choiceLayout = getChoiceGridConfig(shuffledChoices, showChoiceAudio);
+
+  const handleSpeakChoice = (choice: string) => {
+    if (disabled) return;
+    SoundFX.pop();
+    Narrator.speakExact(npcId, spokenChoiceText(round, choice));
+  };
+
+  const scrollBackToQuestion = () => {
+    if (bodyScrollRef.current) {
+      bodyScrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    speakQuestion();
+  };
+
+  const handleLeave = () => {
+    if (paused) return;
+    clearAdvanceTimer();
+    pendingAdvanceRef.current = false;
+    Narrator.stop();
+    onLeave?.();
+  };
+
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center p-2.5 sm:p-4 pb-3 sm:pb-5 bg-slate-900/25 pointer-events-auto">
+    <div
+      aria-hidden={paused}
+      className={`fixed inset-0 z-40 flex items-end justify-center p-2 pt-16 md:p-4 pb-2.5 sm:pb-4 bg-slate-900/25 ${
+        paused ? 'pointer-events-none' : 'pointer-events-auto'
+      }`}
+    >
       <div
-        className="w-full max-w-xl bg-[#fffdf7] rounded-[28px] border-4 border-[#ebd373] p-4 sm:p-5 shadow-2xl relative"
+        className="w-full max-w-2xl max-h-[calc(100dvh-4.75rem)] md:max-h-[calc(100dvh-2rem)] bg-[#fffdf7] rounded-[28px] border-4 border-[#ebd373] p-3.5 sm:p-5 shadow-2xl relative flex flex-col overflow-hidden"
         role="dialog"
         aria-label={`${princess?.name || 'Princess'} quest question`}
       >
-        {/* Top Header: Progress Dots (fixed 5) & Princess Kicker */}
-        <div className="flex items-center justify-between gap-2 mb-2.5">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div
-              className="w-11 h-11 sm:w-12 sm:h-12 rounded-full overflow-hidden border-2 shadow-sm shrink-0 bg-white"
-              style={{ borderColor: princess?.color || '#ebd373' }}
-            >
-              <img
-                src={princess?.portrait}
-                alt={princess?.name}
-                className="w-full h-full object-cover"
-              />
-            </div>
-            <div className="min-w-0">
-              <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-amber-900 block truncate">
-                {quest?.title}
-              </span>
-              <span className="text-sm font-bold text-slate-700 truncate block">
-                {princess?.landName}
-              </span>
-            </div>
-          </div>
-
-          {/* Fixed 5 Progress Dots + Retry Badge */}
-          <div className="flex items-center gap-2 shrink-0">
-            {round.requeued && (
-              <span className="px-2.5 py-0.5 rounded-full bg-amber-200 border border-amber-400 text-xs font-black text-amber-950">
-                Try again 💛
-              </span>
-            )}
-            <div
-              className="flex items-center gap-1.5"
-              aria-label={`Question ${Math.min(completedBaseCount + 1, baseTotal)} of ${baseTotal}`}
-            >
-              {Array.from({ length: baseTotal }, (_, i) => (
-                <span
-                  key={i}
-                  className={`w-3.5 h-3.5 rounded-full transition-colors ${
-                    i < completedBaseCount
-                      ? 'bg-amber-500'
-                      : i === activeDotIdx
-                      ? 'bg-amber-400 ring-2 ring-amber-600'
-                      : 'bg-slate-300'
-                  }`}
+        {/* ZONE 1 (PINNED TOP): Princess Header + Progress Dots + Leave Button + Question Prompt */}
+        <div className="shrink-0">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div
+                className="w-10 h-10 sm:w-11 sm:h-11 rounded-full overflow-hidden border-2 shadow-sm shrink-0 bg-white"
+                style={{ borderColor: princess?.color || '#ebd373' }}
+              >
+                <img
+                  src={princess?.portrait}
+                  alt={princess?.name}
+                  className="w-full h-full object-cover"
                 />
-              ))}
+              </div>
+              <div className="min-w-0">
+                <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-amber-900 block truncate">
+                  {quest?.title}
+                </span>
+                <span className="text-sm font-bold text-slate-700 truncate block">
+                  {princess?.landName}
+                </span>
+              </div>
+            </div>
+
+            {/* Fixed 5 Progress Dots + Retry Badge + Friendly Leave Button (>= 56px) */}
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
+              {round.requeued && (
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-200 border border-amber-400 text-xs font-black text-amber-950">
+                  Try again 💛
+                </span>
+              )}
+              <div
+                className="flex items-center gap-1.5"
+                aria-label={`Question ${Math.min(completedBaseCount + 1, baseTotal)} of ${baseTotal}`}
+              >
+                {Array.from({ length: baseTotal }, (_, i) => (
+                  <span
+                    key={i}
+                    className={`w-3.5 h-3.5 rounded-full transition-colors ${
+                      i < completedBaseCount
+                        ? 'bg-amber-500'
+                        : i === activeDotIdx
+                        ? 'bg-amber-400 ring-2 ring-amber-600'
+                        : 'bg-slate-300'
+                    }`}
+                  />
+                ))}
+              </div>
+              {onLeave && (
+                <button
+                  type="button"
+                  onClick={handleLeave}
+                  disabled={paused}
+                  className="min-h-[56px] px-4 py-2 rounded-full bg-purple-100 hover:bg-purple-200 text-purple-950 font-black text-sm sm:text-base border-2 border-purple-400 shadow-sm active:scale-95 transition-transform cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+                  aria-label="Bye for now — leave quest and keep all earned stars"
+                >
+                  <span>Bye for now</span>
+                  <span aria-hidden="true">👋</span>
+                </button>
+              )}
             </div>
           </div>
-        </div>
 
-        {/* Question Prompt */}
-        <div className="bg-white border-2 border-amber-300 rounded-2xl p-3 sm:p-3.5 mb-2 shadow-xs flex items-center justify-between gap-3">
-          <p className="text-lg sm:text-xl font-black text-slate-900 leading-snug">
-            {round.prompt}
-          </p>
-          <button
-            type="button"
-            onClick={speakQuestion}
-            className="min-w-[48px] min-h-[48px] rounded-full bg-amber-100 hover:bg-amber-200 border-2 border-amber-400 flex items-center justify-center text-xl shrink-0 active:scale-95 shadow-xs"
-            aria-label="Read question again"
-            title="Listen again"
-          >
-            🔊
-          </button>
-        </div>
-
-        {/* Visible Blanked Word / Picture Clue + Specialized Visual Aids */}
-        {renderShowAndClue()}
-        {renderVisual()}
-        {renderBlendLetters()}
-        {renderTileBuilder()}
-        {renderWordSort()}
-
-        {/* Standard 3 Choice Cards (if not tile builder / sort) */}
-        {!round.spell && !round.build && !round.sort && shuffledChoices.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 mt-3">
-            {shuffledChoices.map((choice, i) => {
-              const isSelected = selectedChoice === choice;
-              const isCorrect = choice === round.answer;
-              const isDimmed = dimmedChoices.includes(choice);
-
-              let btnStyle =
-                'bg-white text-slate-900 border-amber-300 hover:border-amber-500 hover:bg-amber-50/40';
-
-              if (feedback.type === 'correct' && isSelected) {
-                btnStyle = 'bg-emerald-500 text-white border-emerald-700 shadow-lg';
-              } else if (feedback.type === 'reveal' && isCorrect) {
-                btnStyle = 'bg-emerald-500 text-white border-emerald-700 shadow-lg';
-              } else if (isDimmed) {
-                btnStyle =
-                  'bg-slate-100 text-slate-400 border-slate-200 opacity-45 cursor-default';
-              } else if (feedback.type === 'wrong' && isSelected) {
-                btnStyle = 'bg-amber-100 text-amber-950 border-amber-500';
-              }
-
-              return (
-                <button
-                  key={i}
-                  type="button"
-                  disabled={disabled || isDimmed}
-                  onClick={() => handleChoice(choice)}
-                  aria-disabled={disabled || isDimmed}
-                  className={`min-h-[64px] sm:min-h-[76px] p-3 rounded-2xl border-2 font-black text-lg sm:text-xl flex items-center justify-center text-center shadow-sm active:scale-95 transition-colors select-none ${btnStyle}`}
-                >
-                  <span className="leading-snug break-words">{choice}</span>
-                </button>
-              );
-            })}
+          {/* Pinned Question Prompt + Speaker Button (never scrolls out of view) */}
+          <div className="bg-white border-2 border-amber-300 rounded-2xl p-2.5 sm:p-3 mb-2 shadow-xs flex items-center justify-between gap-3">
+            <p className="text-base sm:text-xl font-black text-slate-900 leading-snug break-normal">
+              {round.prompt}
+            </p>
+            <button
+              type="button"
+              onClick={speakQuestion}
+              className="min-w-[46px] min-h-[46px] w-12 h-12 rounded-full bg-amber-100 hover:bg-amber-200 border-2 border-amber-400 flex items-center justify-center text-xl shrink-0 active:scale-95 shadow-xs"
+              aria-label="Read question again"
+              title="Listen again"
+            >
+              🔊
+            </button>
           </div>
-        )}
+        </div>
 
-        {/* Fixed-Height Reserved Hint / Feedback Slot (Zero Layout Shift!) */}
+        {/* ZONE 2 (SCROLLABLE MIDDLE): Visual Aids + Space-Aware Answer Cards */}
+        <div
+          ref={bodyScrollRef}
+          onScroll={(e) => setBodyScrolled(e.currentTarget.scrollTop > 12)}
+          className="flex-1 min-h-0 overflow-y-auto pr-0.5"
+        >
+          {renderShowAndClue()}
+          {renderVisual()}
+          {renderBlendLetters()}
+          {renderTileBuilder()}
+          {renderWordSort()}
+
+          {/* Space-Aware Answer Cards (horizontal text, big touch targets, per-choice audio kept) */}
+          {!round.spell && !round.build && !round.sort && shuffledChoices.length > 0 && (
+            <div className={`grid ${choiceLayout.gridClass} gap-2 sm:gap-2.5 mt-2.5`}>
+              {shuffledChoices.map((choice, i) => {
+                const isSelected = selectedChoice === choice;
+                const isCorrect = choice === round.answer;
+                const isDimmed = dimmedChoices.includes(choice);
+                const spoken = spokenChoiceText(round, choice);
+
+                let cardStyle =
+                  'bg-white text-slate-900 border-amber-300 hover:border-amber-500 hover:bg-amber-50/40';
+                let speakerStyle =
+                  'bg-amber-100 hover:bg-amber-200 border-amber-400 text-amber-950';
+
+                if (feedback.type === 'correct' && isSelected) {
+                  cardStyle = 'bg-emerald-500 text-white border-emerald-700 shadow-lg';
+                  speakerStyle = 'bg-emerald-600 border-white/60 text-white';
+                } else if (feedback.type === 'reveal' && isCorrect) {
+                  cardStyle = 'bg-emerald-500 text-white border-emerald-700 shadow-lg';
+                  speakerStyle = 'bg-emerald-600 border-white/60 text-white';
+                } else if (isDimmed) {
+                  cardStyle =
+                    'bg-slate-100 text-slate-400 border-slate-200 opacity-45';
+                  speakerStyle =
+                    'bg-slate-200 border-slate-300 text-slate-400 opacity-60';
+                } else if (feedback.type === 'wrong' && isSelected) {
+                  cardStyle = 'bg-amber-100 text-amber-950 border-amber-500';
+                }
+
+                const useLeftAlign = choiceLayout.isRowLayout && showChoiceAudio;
+
+                return (
+                  <div
+                    key={i}
+                    className={`rounded-2xl border-2 shadow-sm transition-colors flex items-center gap-1.5 ${
+                      showChoiceAudio ? 'pr-2' : ''
+                    } ${cardStyle}`}
+                  >
+                    <button
+                      type="button"
+                      disabled={disabled || isDimmed}
+                      onClick={() => handleChoice(choice)}
+                      aria-disabled={disabled || isDimmed}
+                      className={`flex-1 min-w-0 ${
+                        choiceLayout.isRowLayout
+                          ? 'min-h-[56px] sm:min-h-[60px] py-2.5 px-3.5'
+                          : 'min-h-[64px] sm:min-h-[72px] py-3 px-3'
+                      } font-black text-lg sm:text-xl flex items-center ${
+                        useLeftAlign ? 'justify-start text-left' : 'justify-center text-center'
+                      } active:scale-[0.99] select-none cursor-pointer disabled:cursor-default`}
+                    >
+                      <span className="leading-snug break-normal whitespace-normal">
+                        {choice}
+                      </span>
+                    </button>
+
+                    {showChoiceAudio && (
+                      <button
+                        type="button"
+                        disabled={disabled || isDimmed}
+                        onClick={() => handleSpeakChoice(choice)}
+                        aria-label={`Hear choice: ${spoken}`}
+                        title="Hear this choice"
+                        className={`min-w-[44px] min-h-[44px] w-11 h-11 rounded-full border-2 flex items-center justify-center text-lg shrink-0 active:scale-95 transition-transform cursor-pointer disabled:cursor-default ${speakerStyle}`}
+                      >
+                        🔊
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* ZONE 3 (PINNED BOTTOM): Fixed-Height Reserved Hint / Feedback Slot (Always visible with Question!) */}
         <div
           aria-live="polite"
-          className={`mt-3 h-20 sm:h-[84px] px-3.5 py-2 rounded-2xl border-2 flex items-center justify-center text-center font-extrabold text-base leading-snug transition-colors overflow-y-auto ${
+          className={`shrink-0 mt-2.5 h-[72px] sm:h-[78px] px-3 py-2 rounded-2xl border-2 flex items-center justify-between gap-2 font-extrabold text-sm sm:text-base leading-snug transition-colors ${
             !feedback.message
               ? 'bg-transparent border-transparent text-transparent select-none'
               : feedback.type === 'correct'
@@ -1014,7 +1159,25 @@ export const ChallengeModal: React.FC<ChallengeModalProps> = ({
               : 'bg-amber-50 border-amber-300 text-amber-950'
           }`}
         >
-          <span>{feedback.message || '\u00A0'}</span>
+          <span
+            className={`flex-1 min-w-0 max-h-full overflow-y-auto ${
+              feedback.type === 'wrong' ? 'text-left' : 'text-center'
+            }`}
+          >
+            {feedback.message || '\u00A0'}
+          </span>
+
+          {(feedback.type === 'wrong' || bodyScrolled) && (
+            <button
+              type="button"
+              onClick={scrollBackToQuestion}
+              className="shrink-0 min-h-[42px] px-3 py-1.5 rounded-full bg-white hover:bg-amber-100 border-2 border-amber-400 text-amber-950 font-black text-xs sm:text-sm shadow-xs active:scale-95 flex items-center gap-1"
+              aria-label="Back to question and listen again"
+            >
+              <span>{bodyScrolled ? '↑' : '🔊'}</span>
+              <span>Question</span>
+            </button>
+          )}
         </div>
       </div>
     </div>

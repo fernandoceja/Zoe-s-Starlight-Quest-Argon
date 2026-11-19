@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import { FINALE_LINES } from '../game/quests.js';
 import { Narrator, SoundFX } from '../game/audio.js';
@@ -7,6 +7,7 @@ interface CelebrationModalProps {
   title: string;
   sub: string;
   isFinale?: boolean;
+  paused?: boolean;
   onContinue: () => void;
 }
 
@@ -14,14 +15,19 @@ export const CelebrationModal: React.FC<CelebrationModalProps> = ({
   title,
   sub,
   isFinale = false,
+  paused = false,
   onContinue,
 }) => {
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
+
   useEffect(() => {
     SoundFX.fanfare();
 
-    // Burst confetti
+    // Burst confetti (skips ticks cleanly while paused)
     const end = Date.now() + (isFinale ? 3000 : 1800);
     const interval: any = setInterval(() => {
+      if (pausedRef.current) return;
       if (Date.now() > end) {
         clearInterval(interval);
         return;
@@ -36,9 +42,9 @@ export const CelebrationModal: React.FC<CelebrationModalProps> = ({
     }, 250);
 
     if (isFinale) {
-      Narrator.speakExact('belle', FINALE_LINES.join(' '));
+      Narrator.speakText(FINALE_LINES.join(' '));
     } else {
-      Narrator.speakExact('zoe', `${title}! ${sub}`);
+      Narrator.speakText(`${title} ${sub}`);
     }
 
     return () => {
@@ -48,10 +54,15 @@ export const CelebrationModal: React.FC<CelebrationModalProps> = ({
   }, [title, sub, isFinale]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-sm animate-fade-in pointer-events-auto">
+    <div
+      aria-hidden={paused}
+      className={`fixed inset-0 z-40 flex items-center justify-center p-4 bg-slate-900/65 animate-fade-in ${
+        paused ? 'pointer-events-none' : 'pointer-events-auto'
+      }`}
+    >
       <div className="w-full max-w-lg bg-gradient-to-b from-[#fdfcfe] via-[#fdf7ea] to-[#eff6ff] rounded-[32px] border-4 border-[#ebd373] p-6 sm:p-8 text-center shadow-2xl relative overflow-hidden">
         {/* Shimmering stars background */}
-        <div className="text-6xl mb-3 animate-bounce">
+        <div className="text-6xl mb-3">
           {isFinale ? '👑✨🌟' : '🌟💖✨'}
         </div>
 
@@ -73,8 +84,12 @@ export const CelebrationModal: React.FC<CelebrationModalProps> = ({
 
         {/* Continue Button */}
         <button
-          onClick={onContinue}
-          className="px-8 py-3.5 rounded-full bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-400 text-amber-950 font-black text-lg sm:text-xl shadow-lg border-2 border-white hover:brightness-105 active:scale-95 transition-all"
+          type="button"
+          disabled={paused}
+          onClick={() => {
+            if (!paused) onContinue();
+          }}
+          className="min-h-[56px] px-8 py-3.5 rounded-full bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-400 text-amber-950 font-black text-lg sm:text-xl shadow-lg border-2 border-white hover:brightness-105 active:scale-95 transition-all cursor-pointer"
         >
           {isFinale ? 'Hooray! Long live Princess Zoe! 👑' : 'Continue Adventure ➡️'}
         </button>

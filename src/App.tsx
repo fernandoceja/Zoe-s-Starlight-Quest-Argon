@@ -8,7 +8,7 @@ import {
   setSchoolWords,
   setWeek,
 } from './game/quests.js';
-import { SoundFX, Narrator, setLang } from './game/audio.js';
+import { SoundFX, Narrator, setLang, installAudioCare } from './game/audio.js';
 import { Save, checkMilestones } from './game/save.js';
 import {
   todayKey,
@@ -122,6 +122,24 @@ export const App: React.FC = () => {
   // Secret tracker ref
   const secretTrackerRef = useRef(createSecretTracker());
 
+  // Latest state refs for global keyboard & world callbacks (never stale!)
+  const gameStateRef = useRef(gameState);
+  gameStateRef.current = gameState;
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
+  const pauseTabRef = useRef(pauseTab);
+  pauseTabRef.current = pauseTab;
+  const activeNPCRef = useRef(activeNPC);
+  activeNPCRef.current = activeNPC;
+  const pauseActionStampRef = useRef(0);
+
+  const isPausableState = (s: typeof gameState) =>
+    s === 'roam' ||
+    s === 'dialogue' ||
+    s === 'challenge' ||
+    s === 'celebrate' ||
+    s === 'finale';
+
   const showToast = (msg: string, duration = 3000) => {
     setToastMsg(msg);
     setTimeout(() => {
@@ -138,6 +156,7 @@ export const App: React.FC = () => {
     setWeek(Save.data.week);
     setLang(Save.data.lang === 'ES' ? 'ES' : 'EN');
     Narrator.setMuted(!!Save.data.muted);
+    installAudioCare();
 
     // Sync state from Save
     setStars(Save.data.stars || 0);
@@ -182,7 +201,9 @@ export const App: React.FC = () => {
           handleStartQuest(npcId as PrincessId);
         },
         onPauseRequest() {
-          handleTogglePause();
+          // Guard against double-toggle when React's keydown already handled P/Esc
+          if (Date.now() - pauseActionStampRef.current < 160) return;
+          handleTogglePauseRef.current();
         },
         onWorldTap() {
           SoundFX.chime();
@@ -304,24 +325,130 @@ export const App: React.FC = () => {
     setMuted(newMuted);
   };
 
-  // Toggle Pause
-  const handleTogglePause = () => {
-    if (gameState !== 'roam') return;
-    const nextPaused = !paused;
-    setPaused(nextPaused);
+  // Pause Anywhere (works during roam, dialogue, challenge, celebrate, finale)
+  const handlePause = () => {
+    const curState = gameStateRef.current;
+    if (!isPausableState(curState) || pausedRef.current) return;
+    pauseActionStampRef.current = Date.now();
+    Input.consumePause();
+    Narrator.stop();
+    setPaused(true);
     setPauseTab('menu');
     if (worldRef.current) {
-      worldRef.current.setInputEnabled(!nextPaused);
-      if (nextPaused) worldRef.current.pause();
-      else worldRef.current.resume();
-    }
-    if (nextPaused) {
-      Narrator.stop();
+      worldRef.current.setInputEnabled(false);
+      worldRef.current.pause();
     }
   };
 
+  // Resume returns Zoe to the exact state/question/line/celebration she was in
+  const handleResume = () => {
+    if (!pausedRef.current) return;
+    pauseActionStampRef.current = Date.now();
+    Input.consumePause();
+    Input.clearInteract(250);
+    setPaused(false);
+    setPauseTab('menu');
+    if (worldRef.current) {
+      worldRef.current.resume();
+      worldRef.current.setInputEnabled(gameStateRef.current === 'roam');
+    }
+  };
+
+  const handleTogglePause = () => {
+    if (pausedRef.current) {
+      handleResume();
+    } else {
+      handlePause();
+    }
+  };
+
+  // Leave a Princess Anytime (zero penalty, keeps all earned stars, steps Zoe safely away)
+  const handleLeavePrincess = () => {
+    const npcId = activeNPCRef.current;
+    if (!npcId) return;
+    const P = PRINCESSES[npcId];
+
+    Narrator.stop();
+    SoundFX.pop();
+    setPaused(false);
+    setPauseTab('menu');
+
+    // Reset only the unfinished round; all earned stars are already saved!
+    setRounds([]);
+    setRoundIdx(0);
+    setResults([]);
+    setRequeued(0);
+    setCompletedBaseCount(0);
+    setActiveNPC(null);
+    setNearNPC(null);
+    setInteractPrompt(null);
+    setGameState('roam');
+    refreshGuidance(Save.data.done || []);
+
+    if (worldRef.current) {
+      worldRef.current.unfocus();
+      worldRef.current.stepAwayFromNPC(npcId);
+      worldRef.current.setInputEnabled(true);
+      worldRef.current.resume();
+    }
+
+    if (P) {
+      showToast(`💖 ${P.name}: "Come back anytime!"`, 3200);
+      Narrator.speakExact(npcId, 'Come back anytime, Princess Zoe!');
+    }
+  };
+
+  const handleTogglePauseRef = useRef(handleTogglePause);
+  handleTogglePauseRef.current = handleTogglePause;
+  const handleLeavePrincessRef = useRef(handleLeavePrincess);
+  handleLeavePrincessRef.current = handleLeavePrincess;
+
+  // Global Keyboard Shortcuts: Esc/P pause anywhere, Esc also closes dialogue
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+        return;
+      }
+
+      if (e.code === 'Escape') {
+        if (pausedRef.current) {
+          pauseActionStampRef.current = Date.now();
+          Input.consumePause();
+          if (pauseTabRef.current !== 'menu') {
+            setPauseTab('menu');
+          } else {
+            handleTogglePauseRef.current();
+          }
+          return;
+        }
+        if (gameStateRef.current === 'dialogue') {
+          pauseActionStampRef.current = Date.now();
+          Input.consumePause();
+          handleLeavePrincessRef.current();
+          return;
+        }
+        if (isPausableState(gameStateRef.current)) {
+          handleTogglePauseRef.current();
+        }
+        return;
+      }
+
+      if (e.code === 'KeyP') {
+        if (pausedRef.current || isPausableState(gameStateRef.current)) {
+          handleTogglePauseRef.current();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   // Start Adventure from Title
   const handleStartTitle = () => {
+    Narrator.unlock();
     SoundFX.ensure();
     SoundFX.chime();
     Save.data.started = true;
@@ -347,8 +474,7 @@ export const App: React.FC = () => {
     }
     showToast('Walk to a princess and say hello! 👑');
     Narrator.speakText(
-      'Welcome to Starlight Quest! Walk to a princess and tap her or press E to say hello.',
-      { pitch: 1.15, rate: 0.95 }
+      'Welcome to Starlight Quest! Walk to a princess and tap her or press E to say hello.'
     );
   };
 
@@ -551,7 +677,8 @@ export const App: React.FC = () => {
             nextNPC={nextNPC}
             muted={muted}
             onToggleMute={handleToggleMute}
-            onPause={handleTogglePause}
+            onPause={handlePause}
+            hidePauseButton={true}
             onInteract={() => {
               if (nearNPC) handleStartQuest(nearNPC);
             }}
@@ -559,6 +686,19 @@ export const App: React.FC = () => {
           />
           <VirtualJoystick />
         </>
+      )}
+
+      {/* Always-Visible Big Pause Button (>= 56px, Top-Right Corner) across roam, dialogue, quests, celebrations */}
+      {!paused && isPausableState(gameState) && (
+        <button
+          type="button"
+          onClick={handlePause}
+          className="fixed top-2 right-2 sm:top-3 sm:right-3 z-[45] min-w-[56px] min-h-[56px] w-14 h-14 rounded-full bg-white/95 hover:bg-amber-50 border-3 border-[#ebd373] shadow-lg ring-2 ring-purple-900/15 flex items-center justify-center text-2xl font-black text-purple-950 hover:scale-105 active:scale-95 transition-transform cursor-pointer"
+          aria-label="Pause Menu"
+          title="Pause (P or Esc)"
+        >
+          ⏸️
+        </button>
       )}
 
       {/* Toast Notification */}
@@ -575,7 +715,11 @@ export const App: React.FC = () => {
         <TitleModal
           onStart={handleStartTitle}
           hasSeenTutorial={true}
-          onOpenTutorial={() => setGameState('tutorial')}
+          onOpenTutorial={() => {
+            Narrator.unlock();
+            SoundFX.ensure();
+            setGameState('tutorial');
+          }}
         />
       )}
 
@@ -591,7 +735,7 @@ export const App: React.FC = () => {
         />
       )}
 
-      {/* Dialogue Modal */}
+      {/* Dialogue Modal (kept mounted while paused so Resume returns to exact line) */}
       {gameState === 'dialogue' && activeNPC && (
         <DialogueModal
           npcId={activeNPC}
@@ -603,11 +747,13 @@ export const App: React.FC = () => {
               : QUESTS[activeNPC]?.intro || ['Hello Princess Zoe! Will you help me?']
           }
           onDone={handleDialogueDone}
+          onLeave={handleLeavePrincess}
+          paused={paused}
           actionLabel="Start Quest! ⭐"
         />
       )}
 
-      {/* Challenge Modal */}
+      {/* Challenge Modal (kept mounted while paused so Resume returns to exact question & progress) */}
       {gameState === 'challenge' && activeNPC && currentRound && (
         <ChallengeModal
           npcId={activeNPC}
@@ -616,17 +762,20 @@ export const App: React.FC = () => {
           totalRounds={rounds.length}
           baseTotal={baseTotal}
           completedBaseCount={completedBaseCount}
+          paused={paused}
           onCorrect={handleRoundCorrect}
           onMiss={handleRoundMiss}
+          onLeave={handleLeavePrincess}
         />
       )}
 
-      {/* Celebration & Finale Modal */}
+      {/* Celebration & Finale Modal (kept mounted while paused so Resume returns cleanly) */}
       {(gameState === 'celebrate' || gameState === 'finale') && celebrationData && (
         <CelebrationModal
           title={celebrationData.title}
           sub={celebrationData.sub}
           isFinale={celebrationData.isFinale}
+          paused={paused}
           onContinue={celebrationData.afterAction}
         />
       )}
@@ -636,7 +785,7 @@ export const App: React.FC = () => {
         <>
           {pauseTab === 'menu' && (
             <PauseMenu
-              onResume={handleTogglePause}
+              onResume={handleResume}
               onOpenWardrobe={() => setPauseTab('wardrobe')}
               onOpenTreasureBook={() => setPauseTab('treasurebook')}
               onOpenTutorial={() => setPauseTab('tutorial')}
@@ -660,6 +809,7 @@ export const App: React.FC = () => {
               treasuresToday={treasuresToday}
               treasuresTotal={treasuresTotal}
               onBack={() => setPauseTab('menu')}
+              onResumeGame={handleResume}
             />
           )}
 

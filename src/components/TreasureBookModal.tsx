@@ -7,6 +7,7 @@ interface TreasureBookModalProps {
   treasuresToday: number;
   treasuresTotal: number;
   onBack: () => void;
+  onResumeGame?: () => void;
 }
 
 export const TreasureBookModal: React.FC<TreasureBookModalProps> = ({
@@ -14,6 +15,7 @@ export const TreasureBookModal: React.FC<TreasureBookModalProps> = ({
   treasuresToday,
   treasuresTotal,
   onBack,
+  onResumeGame,
 }) => {
   const foundCount = foundSecrets.length;
   const totalSecrets = ALL_SECRETS.length;
@@ -43,8 +45,9 @@ export const TreasureBookModal: React.FC<TreasureBookModalProps> = ({
           <button
             type="button"
             onClick={onBack}
-            className="min-w-[44px] min-h-[44px] rounded-full bg-slate-200 hover:bg-slate-300 font-black text-slate-800 flex items-center justify-center text-lg active:scale-95"
-            aria-label="Back"
+            className="min-w-[44px] min-h-[44px] rounded-full bg-slate-200 hover:bg-slate-300 font-black text-slate-800 flex items-center justify-center text-lg active:scale-95 cursor-pointer"
+            aria-label="Back to Pause Menu"
+            title="Back to Pause Menu"
           >
             ✕
           </button>
@@ -94,11 +97,11 @@ export const TreasureBookModal: React.FC<TreasureBookModalProps> = ({
           Scroll to see all {totalSecrets} kingdom stickers ✨
         </p>
 
-        {/* Back Button */}
+        {/* Back to Quest Button — directly resumes gameplay */}
         <button
           type="button"
-          onClick={onBack}
-          className="mt-3 w-full min-h-[52px] py-3 rounded-full bg-gradient-to-r from-amber-400 to-yellow-400 text-amber-950 font-black text-lg shadow-md active:scale-95 shrink-0"
+          onClick={onResumeGame || onBack}
+          className="mt-3 w-full min-h-[56px] py-3 rounded-full bg-gradient-to-r from-amber-400 to-yellow-400 text-amber-950 font-black text-lg shadow-md border-2 border-amber-600/30 active:scale-95 shrink-0 cursor-pointer"
         >
           Back to Quest 🌟
         </button>

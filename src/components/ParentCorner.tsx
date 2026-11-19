@@ -1,5 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PRINCESSES, NPC_ORDER } from '../game/quests.js';
+import {
+  Narrator,
+  getTopVoices,
+  getNarratorVoice,
+  getSelectedVoiceURI,
+  setSelectedVoiceURI,
+  onVoicesChanged,
+} from '../game/audio.js';
 
 interface ParentCornerProps {
   stars: number;
@@ -67,6 +75,36 @@ export const ParentCorner: React.FC<ParentCornerProps> = ({
   const [lockError, setLockError] = useState(false);
   const [customWordsInput, setCustomWordsInput] = useState(schoolWords.join(', '));
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [topVoices, setTopVoices] = useState<
+    { name: string; lang: string; voiceURI: string; tag: string }[]
+  >(() => getTopVoices(undefined, 5));
+  const [selectedVoice, setSelectedVoice] = useState<string>(() => getSelectedVoiceURI());
+  const [narratorVoice, setNarratorVoice] = useState<{ name: string; lang: string } | null>(
+    () => getNarratorVoice()
+  );
+
+  useEffect(() => {
+    const refresh = () => {
+      setTopVoices(getTopVoices(undefined, 5));
+      setNarratorVoice(getNarratorVoice());
+    };
+    refresh();
+    const unsub = onVoicesChanged(refresh);
+    return () => {
+      unsub();
+      Narrator.stop();
+    };
+  }, []);
+
+  const handleVoiceChange = (uri: string) => {
+    setSelectedVoice(uri);
+    setSelectedVoiceURI(uri);
+    setNarratorVoice(getNarratorVoice());
+  };
+
+  const handleTestVoice = () => {
+    Narrator.testVoice(selectedVoice);
+  };
 
   const checkAnswer = (e: React.FormEvent) => {
     e.preventDefault();
@@ -181,6 +219,52 @@ export const ParentCorner: React.FC<ParentCornerProps> = ({
               <div className="text-2xl font-black text-emerald-600">No Fails</div>
               <div className="text-xs font-bold text-slate-600">Adaptive Learning</div>
             </div>
+          </div>
+
+          {/* Voice Picker (Top 5 Ranked Voices + Test + iOS Tip) */}
+          <div className="p-4 bg-white rounded-2xl border-2 border-purple-200 shadow-xs">
+            <h3 className="text-sm font-black text-purple-950 mb-1 flex items-center gap-1.5">
+              <span>🔊</span>
+              <span>Voice</span>
+            </h3>
+            <p className="text-xs text-slate-700 mb-2">
+              Pick a storybook voice for reading aloud (automatically saved):
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <select
+                aria-label="Storybook voice"
+                value={selectedVoice}
+                onChange={(e) => handleVoiceChange(e.target.value)}
+                className="flex-1 px-3 py-2 rounded-xl border border-slate-300 bg-white text-sm font-bold text-slate-900 focus:outline-none focus:border-purple-400"
+              >
+                <option value="">
+                  Auto (Best Voice{topVoices[0] ? ` — ${topVoices[0].name}` : ''})
+                </option>
+                {topVoices.map((v) => (
+                  <option key={v.voiceURI} value={v.voiceURI}>
+                    {v.name}
+                    {v.tag ? ` [${v.tag}]` : ''}
+                    {v.lang ? ` (${v.lang})` : ''}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={handleTestVoice}
+                className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-black text-sm shadow-xs active:scale-95 shrink-0"
+              >
+                🔊 Test
+              </button>
+            </div>
+            {narratorVoice && (
+              <p className="mt-2 text-xs font-bold text-purple-900">
+                Active offline narrator voice: <span className="font-black">{narratorVoice.name}</span>
+                {narratorVoice.lang ? ` (${narratorVoice.lang})` : ''}
+              </p>
+            )}
+            <p className="mt-2.5 text-xs font-semibold text-slate-700 leading-relaxed bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              For the best voice on iPhone/iPad: Settings &gt; Accessibility &gt; Spoken Content &gt; Voices &gt; English &gt; download an Enhanced or Premium voice (like Ava or Samantha).
+            </p>
           </div>
 
           {/* Teacher's Weekly Sight Words Input */}
