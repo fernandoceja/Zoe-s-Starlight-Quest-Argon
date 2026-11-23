@@ -685,7 +685,7 @@ function _speakPrincess(princessId, kind, text, onDone) {
 
   // NOTE: when deployed as starlight-quest/ inside Zoe's Princess Academy repo,
   // the voice MP3s live in the repo-root assets/audio/ folder (shared with the Academy).
-  const url = '/assets/audio/' + LANG + '/princess_' + princessId + '_' + kind + '_01.mp3';
+  const url = import.meta.env.BASE_URL + 'assets/audio/' + LANG + '/princess_' + princessId + '_' + kind + '_01.mp3';
   let mp3Ok = false;
 
   try {
