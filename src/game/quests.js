@@ -777,7 +777,7 @@ export function _belleHint(w, distractors) {
 // A wrong answer plays the clip for the letter the hint points at, so Zoe hears
 // the letter's SOUND (text-to-speech would say its name). Short vowels only
 // (the 'o' clip says the long sound); no x or q.
-export const BELLE_CLIP_DIR = '/assets/audio/EN/curriculum/belle/';
+export const BELLE_CLIP_DIR = import.meta.env.BASE_URL + 'assets/audio/EN/curriculum/belle/';
 const LETTER_CLIPS = {
   a: 'a_says_ah_apple', b: 'b_says_buh_ball', c: 'c_says_kuh_cat', d: 'd_says_duh_dog',
   e: 'e_says_eh_egg', f: 'f_says_fuh_fish', g: 'g_says_guh_goat', h: 'h_says_huh_hat',
